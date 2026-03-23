@@ -2,6 +2,8 @@
 
 A retro DOS-themed arcade web game that generates real security logs in **Elastic Common Schema (ECS)** format. Built for SIEM training, SOC demos, and ELK stack integration.
 
+![Game Screenshot](assets/screenshot.png)
+
 ## Overview
 
 Players authenticate, play a top-down arcade shooter, and every action generates ECS-compliant logs — authentication events, gameplay actions, session lifecycle — all streamed in real-time to an NDJSON file ready for Filebeat/Logstash ingestion into Elasticsearch + Kibana.
