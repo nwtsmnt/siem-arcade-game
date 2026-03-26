@@ -1,10 +1,11 @@
 // Player entity: movement, shooting, lives, invincibility
 
-import { getMovementVector, getLastDirection, isKeyDown, isJustPressed } from './input.js';
+import { getMovementVector, getLastDirection, isKeyDown, isJustPressed, updateMouseDirection } from './input.js';
 import { drawSprite, drawProjectile, drawShockwave, spawnParticles, COLORS } from './renderer.js';
 import { emitGameEvent } from './log-engine.js';
 import { playSound } from './audio.js';
 import { getState } from './engine.js';
+import { getActivePowerup, useShieldCharge } from './powerups.js';
 
 const SPEED = 3.5;
 const PROJECTILE_SPEED = 7;
@@ -22,6 +23,7 @@ let shockwave = null;
 let shootCooldown = 0;
 let shotCount = 0;
 let moveLogTimer = 0;
+let autoAttackTimer = 0;
 
 export function createPlayer(canvasW, canvasH) {
   player = {
@@ -51,6 +53,15 @@ export function addScore(points) {
 
 export function damagePlayer() {
   if (!player || player.invincible > 0) return false;
+
+  // Shield power-up absorbs damage
+  if (useShieldCharge()) {
+    player.invincible = 30; // brief invincibility
+    spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 8, 2);
+    playSound('shockwave');
+    return false;
+  }
+
   player.lives--;
   player.invincible = INVINCIBILITY_FRAMES;
   spawnParticles(player.x + player.w / 2, player.y + player.h / 2, 10, 2);
@@ -74,6 +85,9 @@ export function updatePlayer(canvasW, canvasH) {
   player.x = Math.max(0, Math.min(canvasW - player.w, player.x));
   player.y = Math.max(30, Math.min(canvasH - player.h - 10, player.y));
 
+  // Update aim direction from mouse (if mouse is active)
+  updateMouseDirection(player.x, player.y, player.w, player.h);
+
   // Movement logging (batched every 5 seconds = 300 frames)
   if (move.x !== 0 || move.y !== 0) {
     moveLogTimer++;
@@ -89,23 +103,78 @@ export function updatePlayer(canvasW, canvasH) {
   if (player.invincible > 0) player.invincible--;
 
   // Shooting
+  const powerup = getActivePowerup();
+  const currentCooldown = (powerup && powerup.typeId === 'rapid_fire') ? Math.floor(SHOOT_COOLDOWN / 2) : SHOOT_COOLDOWN;
+  const isPiercing = powerup && powerup.typeId === 'piercing';
+
   shootCooldown = Math.max(0, shootCooldown - 1);
   if (isKeyDown(' ') && shootCooldown === 0) {
     const dir = getLastDirection();
+    // Use precise mouse aim if available, otherwise grid direction
+    const aimDir = dir._precise || dir;
     const cx = player.x + player.w / 2;
     const cy = player.y + player.h / 2;
-    projectiles.push({
-      x: cx,
-      y: cy,
-      vx: dir.x * PROJECTILE_SPEED,
-      vy: dir.y * PROJECTILE_SPEED,
-    });
-    shootCooldown = SHOOT_COOLDOWN;
+
+    if (powerup && powerup.typeId === 'triple_shot') {
+      // Triple shot: center + two angled
+      const spread = 0.35; // radians
+      const angle = Math.atan2(aimDir.y, aimDir.x);
+      for (let offset = -1; offset <= 1; offset++) {
+        const a = angle + offset * spread;
+        projectiles.push({
+          x: cx, y: cy,
+          vx: Math.cos(a) * PROJECTILE_SPEED,
+          vy: Math.sin(a) * PROJECTILE_SPEED,
+          piercing: isPiercing,
+        });
+      }
+    } else {
+      projectiles.push({
+        x: cx, y: cy,
+        vx: aimDir.x * PROJECTILE_SPEED,
+        vy: aimDir.y * PROJECTILE_SPEED,
+        piercing: isPiercing,
+      });
+    }
+
+    shootCooldown = currentCooldown;
     playSound('shoot');
 
     shotCount++;
     if (shotCount % 3 === 0) {
-      emitGameEvent('player_shoot', { shotCount });
+      emitGameEvent('player_shoot', { shotCount, powerup: powerup ? powerup.type.name : 'none' });
+    }
+  }
+
+  // Auto-attack power-up
+  if (powerup && powerup.typeId === 'auto_attack') {
+    autoAttackTimer = (autoAttackTimer || 0) + 1;
+    if (autoAttackTimer >= 20) { // fire every ~0.33s
+      autoAttackTimer = 0;
+      const enemies = window.__gameEnemies || [];
+      let nearest = null;
+      let nearestDist = Infinity;
+      const cx = player.x + player.w / 2;
+      const cy = player.y + player.h / 2;
+      for (const e of enemies) {
+        if (!e.alive) continue;
+        const edx = (e.x + e.w / 2) - cx;
+        const edy = (e.y + e.h / 2) - cy;
+        const d = Math.sqrt(edx * edx + edy * edy);
+        if (d < nearestDist) { nearestDist = d; nearest = e; }
+      }
+      if (nearest && nearestDist < 400) {
+        const edx = (nearest.x + nearest.w / 2) - cx;
+        const edy = (nearest.y + nearest.h / 2) - cy;
+        const len = Math.sqrt(edx * edx + edy * edy);
+        projectiles.push({
+          x: cx, y: cy,
+          vx: (edx / len) * PROJECTILE_SPEED,
+          vy: (edy / len) * PROJECTILE_SPEED,
+          piercing: false,
+        });
+        playSound('shoot');
+      }
     }
   }
 

@@ -2,9 +2,21 @@
 import { initGame } from './engine.js';
 import { setAuthUser } from './log-engine.js';
 
+// TESTING: skip auth, go straight to game
+const SKIP_AUTH = true;
+
 window.addEventListener('DOMContentLoaded', () => {
   const loginScreen = document.getElementById('login-screen');
   const gameWrapper = document.getElementById('game-wrapper');
+
+  if (SKIP_AUTH) {
+    setAuthUser('test_player', '127.0.0.1', 1);
+    loginScreen.classList.add('hidden');
+    gameWrapper.classList.remove('hidden');
+    initGame();
+    return;
+  }
+
   const usernameInput = document.getElementById('login-username');
   const passwordInput = document.getElementById('login-password');
   const loginBtn = document.getElementById('login-btn');

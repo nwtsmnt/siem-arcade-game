@@ -16,9 +16,11 @@ export function initAudio() {
     }
     document.removeEventListener('click', unlock);
     document.removeEventListener('keydown', unlock);
+    document.removeEventListener('touchstart', unlock);
   };
   document.addEventListener('click', unlock);
   document.addEventListener('keydown', unlock);
+  document.addEventListener('touchstart', unlock);
 }
 
 function tone(freq, duration, type = 'square', volume = 0.3) {
@@ -66,8 +68,10 @@ const SOUNDS = {
     tone(600, 0.05, 'square', 0.1);
   },
   hit: () => {
-    tone(200, 0.15, 'sawtooth', 0.2);
-    noise(0.1, 0.15);
+    tone(150, 0.2, 'sawtooth', 0.3);
+    tone(80, 0.25, 'square', 0.25);
+    noise(0.15, 0.25);
+    setTimeout(() => tone(100, 0.15, 'sawtooth', 0.15), 100);
   },
   explosion: () => {
     noise(0.3, 0.25);

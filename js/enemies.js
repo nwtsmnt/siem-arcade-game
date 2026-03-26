@@ -1,6 +1,6 @@
 // Enemy drones: patrol AI, collision, respawn
 
-import { drawSprite, spawnParticles, COLORS } from './renderer.js';
+import { drawSprite, spawnParticles, COLORS, getEnemyType, getRandomEnemyTypeId } from './renderer.js';
 import { getProjectiles, removeProjectile, getShockwave, damagePlayer, addScore, getPlayerBounds } from './player.js';
 import { emitGameEvent } from './log-engine.js';
 import { playSound } from './audio.js';
@@ -33,6 +33,7 @@ function spawnEnemy(canvasW, canvasH, index) {
   }
 
   const angle = Math.random() * Math.PI * 2;
+  const typeId = getRandomEnemyTypeId();
   return {
     x, y,
     w: ENEMY_SIZE,
@@ -41,6 +42,7 @@ function spawnEnemy(canvasW, canvasH, index) {
     vy: Math.sin(angle) * ENEMY_SPEED,
     alive: true,
     hp: 1,
+    typeId,
   };
 }
 
@@ -80,7 +82,9 @@ export function updateEnemies(canvasW, canvasH, player) {
       const p = projectiles[j];
       if (aabb(p.x - 4, p.y - 4, 8, 8, e.x, e.y, e.w, e.h)) {
         e.alive = false;
-        removeProjectile(j);
+        if (!p.piercing) {
+          removeProjectile(j);
+        }
         addScore(200);
         spawnParticles(e.x + e.w / 2, e.y + e.h / 2, 15, 3);
         playSound('explosion');
@@ -118,7 +122,12 @@ export function updateEnemies(canvasW, canvasH, player) {
 export function drawEnemies(ctx) {
   for (const e of enemies) {
     if (!e.alive) continue;
-    drawSprite(ctx, 'enemy', e.x, e.y, e.w, COLORS.enemy);
+    const type = getEnemyType(e.typeId);
+    if (type) {
+      drawSprite(ctx, null, e.x, e.y, e.w, type.colors, type.sprite);
+    } else {
+      drawSprite(ctx, 'enemy', e.x, e.y, e.w, COLORS.enemy);
+    }
   }
 }
 
