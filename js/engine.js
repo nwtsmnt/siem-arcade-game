@@ -1,11 +1,12 @@
 // Game loop, state machine, canvas management
 
-import { initInput, clearJustPressed, isJustPressed } from './input.js';
-import { drawBackground, updateAndDrawParticles, clearParticles, drawText } from './renderer.js';
+import { initInput, clearJustPressed, isJustPressed, isTouchDevice, setMenuState } from './input.js';
+import { drawBackground, updateAndDrawParticles, clearParticles, drawText, drawSprite, getCharacters, setSelectedCharacter, getSelectedCharacter } from './renderer.js';
 import { createPlayer, updatePlayer, drawPlayer, getPlayerState } from './player.js';
 import { initEnemies, updateEnemies, drawEnemies, getEnemies } from './enemies.js';
 import { initBoss, updateBoss, drawBoss, getBoss, isBossActive, isBossDefeated } from './boss.js';
 import { initTerminals, updateTerminals, drawTerminals } from './terminals.js';
+import { initPowerups, updatePowerups, drawPowerups } from './powerups.js';
 import { drawHUD } from './hud.js';
 import { initAudio, playSound } from './audio.js';
 import { initLogEngine, emitGameEvent, exportLogs, getLogCount } from './log-engine.js';
@@ -15,6 +16,7 @@ export const CANVAS_H = 650;
 
 export const STATES = {
   MENU: 'MENU',
+  CHAR_SELECT: 'CHAR_SELECT',
   PLAYING: 'PLAYING',
   BOSS_INTRO: 'BOSS_INTRO',
   BOSS_FIGHT: 'BOSS_FIGHT',
@@ -28,6 +30,8 @@ let canvas, ctx;
 let frameCount = 0;
 let bossIntroTimer = 0;
 let menuBlink = 0;
+let charSelectIndex = 0;
+const charIds = ['ghost', 'viper', 'cipher', 'nova', 'hex'];
 
 // Score threshold to trigger boss
 const BOSS_SCORE_THRESHOLD = 2000;
@@ -69,6 +73,7 @@ export function initGame() {
 
 function startGame() {
   state = STATES.PLAYING;
+  setMenuState(false);
   bossTriggered = false;
   frameCount = 0;
   clearParticles();
@@ -76,6 +81,7 @@ function startGame() {
   createPlayer(CANVAS_W, CANVAS_H);
   initEnemies(CANVAS_W, CANVAS_H);
   initTerminals(CANVAS_W, CANVAS_H);
+  initPowerups(CANVAS_W, CANVAS_H);
 
   emitGameEvent('session_start', {});
   emitGameEvent('user_login', { outcome: 'success' });
@@ -96,18 +102,43 @@ function gameLoop(timestamp) {
 function update() {
   switch (state) {
     case STATES.MENU:
+      setMenuState(true);
       menuBlink++;
       if (isJustPressed(' ') || isJustPressed('enter')) {
+        playSound('start');
+        state = STATES.CHAR_SELECT;
+      }
+      break;
+
+    case STATES.CHAR_SELECT:
+      if (isJustPressed('a') || isJustPressed('arrowleft')) {
+        charSelectIndex = (charSelectIndex - 1 + charIds.length) % charIds.length;
+        playSound('shoot');
+      }
+      if (isJustPressed('d') || isJustPressed('arrowright')) {
+        charSelectIndex = (charSelectIndex + 1) % charIds.length;
+        playSound('shoot');
+      }
+      if (isJustPressed(' ') || isJustPressed('enter')) {
+        setSelectedCharacter(charIds[charSelectIndex]);
         playSound('start');
         startGame();
       }
       break;
 
     case STATES.PLAYING: {
+      if (isJustPressed('escape')) {
+        prevState = state;
+        state = STATES.PAUSED;
+        break;
+      }
       const player = getPlayerState();
+      const enemies = getEnemies();
+      window.__gameEnemies = enemies; // expose for auto-attack
       updatePlayer(CANVAS_W, CANVAS_H, ctx);
       updateEnemies(CANVAS_W, CANVAS_H, player);
       updateTerminals(player);
+      updatePowerups(player, enemies);
 
       // Check if boss should spawn
       if (!bossTriggered && player.score >= BOSS_SCORE_THRESHOLD) {
@@ -136,9 +167,16 @@ function update() {
       break;
 
     case STATES.BOSS_FIGHT: {
+      if (isJustPressed('escape')) {
+        prevState = state;
+        state = STATES.PAUSED;
+        break;
+      }
       const player = getPlayerState();
+      window.__gameEnemies = []; // no regular enemies during boss
       updatePlayer(CANVAS_W, CANVAS_H, ctx);
       updateBoss(CANVAS_W, CANVAS_H, player);
+      updatePowerups(player, []);
 
       if (isBossDefeated()) {
         state = STATES.PLAYING;
@@ -158,22 +196,19 @@ function update() {
     }
 
     case STATES.PAUSED:
+      setMenuState(true);
       if (isJustPressed('escape')) {
         state = prevState || STATES.PLAYING;
+        setMenuState(false);
       }
       break;
 
     case STATES.GAME_OVER:
+      setMenuState(true);
       if (isJustPressed(' ') || isJustPressed('enter')) {
-        startGame();
+        state = STATES.CHAR_SELECT;
       }
       break;
-  }
-
-  // Pause toggle (from playing states)
-  if ((state === STATES.PLAYING || state === STATES.BOSS_FIGHT) && isJustPressed('escape')) {
-    prevState = state;
-    state = STATES.PAUSED;
   }
 }
 
@@ -185,8 +220,13 @@ function draw() {
       drawMenuScreen(ctx);
       break;
 
+    case STATES.CHAR_SELECT:
+      drawCharSelectScreen(ctx);
+      break;
+
     case STATES.PLAYING:
       drawTerminals(ctx);
+      drawPowerups(ctx);
       drawEnemies(ctx);
       drawPlayer(ctx);
       updateAndDrawParticles(ctx);
@@ -202,6 +242,7 @@ function draw() {
 
     case STATES.BOSS_FIGHT:
       drawTerminals(ctx);
+      drawPowerups(ctx);
       drawBoss(ctx);
       drawPlayer(ctx);
       updateAndDrawParticles(ctx);
@@ -211,6 +252,7 @@ function draw() {
     case STATES.PAUSED:
       // Draw game state underneath
       drawTerminals(ctx);
+      drawPowerups(ctx);
       if (isBossActive()) drawBoss(ctx);
       else drawEnemies(ctx);
       drawPlayer(ctx);
@@ -219,7 +261,8 @@ function draw() {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       drawText(ctx, '// SYSTEM PAUSED //', CANVAS_W / 2, CANVAS_H / 2 - 20, 40, '#ffcc00', 'center');
-      drawText(ctx, '[ESC] to resume', CANVAS_W / 2, CANVAS_H / 2 + 30, 24, '#556655', 'center');
+      const resumeMsg = isTouchDevice() ? 'Tap PAUSE to resume' : '[ESC] to resume';
+      drawText(ctx, resumeMsg, CANVAS_W / 2, CANVAS_H / 2 + 30, 24, '#556655', 'center');
       break;
 
     case STATES.GAME_OVER:
@@ -235,7 +278,8 @@ function drawMenuScreen(ctx) {
 
   // Blinking prompt
   if (Math.floor(menuBlink / 30) % 2 === 0) {
-    drawText(ctx, '>> PRESS [SPACE] TO INITIATE <<', CANVAS_W / 2, 350, 30, '#ffcc00', 'center');
+    const startMsg = isTouchDevice() ? '>> TAP TO INITIATE <<' : '>> PRESS [SPACE] TO INITIATE <<';
+    drawText(ctx, startMsg, CANVAS_W / 2, 350, 30, '#ffcc00', 'center');
   }
 
   // Instructions
@@ -244,7 +288,83 @@ function drawMenuScreen(ctx) {
   drawText(ctx, 'All actions are logged for SIEM analysis.', CANVAS_W / 2, 500, 20, '#cc44ff', 'center');
 
   // Controls
-  drawText(ctx, '[WASD] Move   [SPACE] Fire   [Q] Shockwave   [E] Interact', CANVAS_W / 2, 560, 20, '#334433', 'center');
+  if (!isTouchDevice()) {
+    drawText(ctx, '[WASD] Move   [SPACE] Fire   [Q] Shockwave   [E] Interact', CANVAS_W / 2, 560, 20, '#334433', 'center');
+  }
+}
+
+function drawCharSelectScreen(ctx) {
+  const chars = getCharacters();
+  const ids = charIds;
+
+  drawText(ctx, 'SELECT OPERATIVE', CANVAS_W / 2, 80, 42, '#ffcc00', 'center');
+
+  const cardW = 140;
+  const totalW = ids.length * cardW + (ids.length - 1) * 16;
+  const startX = (CANVAS_W - totalW) / 2;
+  const cardY = 140;
+
+  ids.forEach((id, i) => {
+    const char = chars[id];
+    const x = startX + i * (cardW + 16);
+    const selected = i === charSelectIndex;
+
+    // Card background
+    ctx.fillStyle = selected ? 'rgba(57, 255, 20, 0.15)' : 'rgba(255,255,255,0.03)';
+    ctx.fillRect(x, cardY, cardW, 340);
+
+    // Border
+    ctx.strokeStyle = selected ? char.colors[0] : '#334433';
+    ctx.lineWidth = selected ? 3 : 1;
+    ctx.strokeRect(x, cardY, cardW, 340);
+
+    // Draw sprite large (centered in card)
+    const spriteSize = 80;
+    const spriteX = x + (cardW - spriteSize) / 2;
+    const spriteY = cardY + 30;
+
+    // Glow effect for selected
+    if (selected) {
+      ctx.shadowColor = char.colors[0];
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = char.colors[0];
+      ctx.fillRect(spriteX + spriteSize/2 - 2, spriteY + spriteSize/2 - 2, 4, 4);
+      ctx.shadowBlur = 0;
+    }
+
+    drawSprite(ctx, null, spriteX, spriteY, spriteSize, char.colors, char.sprite);
+
+    // Name
+    drawText(ctx, char.name, x + cardW / 2, cardY + 140, selected ? 28 : 24, selected ? char.colors[0] : '#556655', 'center');
+
+    // Description
+    drawText(ctx, char.desc, x + cardW / 2, cardY + 170, 16, '#556655', 'center');
+
+    // Color preview dots
+    char.colors.forEach((c, ci) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(x + cardW/2 - 20 + ci * 20, cardY + 200, 6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Selection arrow
+    if (selected) {
+      const arrowY = cardY + 300;
+      if (Math.floor(frameCount / 20) % 2 === 0) {
+        drawText(ctx, '▲', x + cardW / 2, arrowY, 28, char.colors[0], 'center');
+      }
+    }
+  });
+
+  // Instructions
+  const mobile = isTouchDevice();
+  if (mobile) {
+    drawText(ctx, '◄ USE STICK TO SELECT ►', CANVAS_W / 2, 540, 26, '#556655', 'center');
+    drawText(ctx, 'PRESS FIRE TO CONFIRM', CANVAS_W / 2, 575, 22, '#ffcc00', 'center');
+  } else {
+    drawText(ctx, '◄ [A/D] TO SELECT   [SPACE] TO CONFIRM ►', CANVAS_W / 2, 560, 24, '#556655', 'center');
+  }
 }
 
 function drawBossIntro(ctx) {
@@ -268,7 +388,8 @@ function drawGameOverScreen(ctx) {
   drawText(ctx, `LOGS GENERATED: ${getLogCount()}`, CANVAS_W / 2, 380, 24, '#cc44ff', 'center');
 
   if (Math.floor(frameCount / 30) % 2 === 0) {
-    drawText(ctx, '>> PRESS [SPACE] TO RETRY <<', CANVAS_W / 2, 460, 28, '#ffcc00', 'center');
+    const retryMsg = isTouchDevice() ? '>> TAP TO RETRY <<' : '>> PRESS [SPACE] TO RETRY <<';
+    drawText(ctx, retryMsg, CANVAS_W / 2, 460, 28, '#ffcc00', 'center');
   }
 }
 

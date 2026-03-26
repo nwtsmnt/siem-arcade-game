@@ -16,28 +16,194 @@ const COLORS = {
   particle: ['#ff6600', '#ffcc00', '#ff3333', '#ff9900'],
 };
 
+// Character definitions
+const CHARACTERS = {
+  ghost: {
+    name: 'GHOST',
+    nameUa: 'ПРИВИД',
+    desc: 'Stealth operative',
+    colors: ['#39ff14', '#2bcc0f', '#1a8a09'],
+    projectile: '#39ff14',
+    sprite: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,2,1,1,2,1,0],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,2,2,1,1,1],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,3,0,0,3,1,0],
+      [0,1,0,0,0,0,1,0],
+    ],
+  },
+  viper: {
+    name: 'VIPER',
+    nameUa: 'ГАДЮКА',
+    desc: 'Assault specialist',
+    colors: ['#ff3333', '#ff6644', '#ffaa33'],
+    projectile: '#ff4444',
+    sprite: [
+      [0,0,0,1,1,0,0,0],
+      [0,0,1,2,2,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [1,3,1,1,1,1,3,1],
+      [1,1,1,2,2,1,1,1],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,0,0,1,0,0],
+      [0,1,3,0,0,3,1,0],
+    ],
+  },
+  cipher: {
+    name: 'CIPHER',
+    nameUa: 'ШИФР',
+    desc: 'Crypto analyst',
+    colors: ['#00ffff', '#0099cc', '#006688'],
+    projectile: '#00ffff',
+    sprite: [
+      [0,1,1,1,1,1,1,0],
+      [1,2,2,1,1,2,2,1],
+      [1,1,1,1,1,1,1,1],
+      [0,1,3,1,1,3,1,0],
+      [0,1,1,2,2,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,0,1,3,3,1,0,0],
+      [0,1,1,0,0,1,1,0],
+    ],
+  },
+  nova: {
+    name: 'NOVA',
+    nameUa: 'НОВА',
+    desc: 'Energy weapons expert',
+    colors: ['#cc44ff', '#ff44aa', '#ff88cc'],
+    projectile: '#cc44ff',
+    sprite: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,3,2,2,3,1,0],
+      [0,1,1,1,1,1,1,0],
+      [1,1,1,1,1,1,1,1],
+      [1,3,1,2,2,1,3,1],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,0,0,1,0,0],
+      [0,0,3,0,0,3,0,0],
+    ],
+  },
+  hex: {
+    name: 'HEX',
+    nameUa: 'ХЕКС',
+    desc: 'Systems hacker',
+    colors: ['#ffcc00', '#ff9900', '#cc6600'],
+    projectile: '#ffcc00',
+    sprite: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,2,2,1,1,0],
+      [1,2,1,1,1,1,2,1],
+      [1,1,1,3,3,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [0,1,3,1,1,3,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,0,0,0,0,1,0],
+    ],
+  },
+};
+
+let selectedCharacter = 'ghost';
+
+export function getCharacters() { return CHARACTERS; }
+export function getSelectedCharacter() { return selectedCharacter; }
+export function setSelectedCharacter(id) {
+  selectedCharacter = id;
+  const char = CHARACTERS[id];
+  if (char) {
+    COLORS.player = char.colors;
+    COLORS.projectilePlayer = char.projectile;
+    SPRITES.player = char.sprite;
+  }
+}
+
+// Enemy type definitions
+const ENEMY_TYPES = {
+  drone: {
+    name: 'Drone',
+    colors: ['#ff3333', '#cc2222', '#881111'],
+    sprite: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,2,2,1,1,0],
+      [1,1,2,1,1,2,1,1],
+      [1,1,1,1,1,1,1,1],
+      [0,1,3,1,1,3,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,0,0,1,1,0,0,0],
+      [0,0,1,0,0,1,0,0],
+    ],
+  },
+  spider: {
+    name: 'Spider',
+    colors: ['#ff6600', '#cc4400', '#993300'],
+    sprite: [
+      [1,0,0,1,1,0,0,1],
+      [0,1,0,1,1,0,1,0],
+      [0,0,1,2,2,1,0,0],
+      [1,1,1,1,1,1,1,1],
+      [0,0,1,2,2,1,0,0],
+      [0,1,0,1,1,0,1,0],
+      [1,0,0,1,1,0,0,1],
+      [0,0,0,3,3,0,0,0],
+    ],
+  },
+  skull: {
+    name: 'Skull',
+    colors: ['#ffffff', '#aaaaaa', '#ff3333'],
+    sprite: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [1,1,2,1,1,2,1,1],
+      [1,1,3,1,1,3,1,1],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,2,2,1,0,0],
+      [0,0,2,1,1,2,0,0],
+      [0,0,0,2,2,0,0,0],
+    ],
+  },
+  bug: {
+    name: 'Bug',
+    colors: ['#44ff44', '#22aa22', '#116611'],
+    sprite: [
+      [0,1,0,0,0,0,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,2,1,1,2,1,0],
+      [1,1,1,1,1,1,1,1],
+      [1,3,1,1,1,1,3,1],
+      [1,1,1,1,1,1,1,1],
+      [0,1,0,1,1,0,1,0],
+      [1,0,0,0,0,0,0,1],
+    ],
+  },
+  sentinel: {
+    name: 'Sentinel',
+    colors: ['#ffcc00', '#ff9900', '#cc6600'],
+    sprite: [
+      [0,0,0,1,1,0,0,0],
+      [0,0,1,2,2,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [1,3,1,2,2,1,3,1],
+      [1,1,1,1,1,1,1,1],
+      [0,1,1,3,3,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,0,0,0,0,1,0],
+    ],
+  },
+};
+
+const ENEMY_TYPE_IDS = Object.keys(ENEMY_TYPES);
+
+export function getEnemyType(id) { return ENEMY_TYPES[id]; }
+export function getRandomEnemyTypeId() {
+  return ENEMY_TYPE_IDS[Math.floor(Math.random() * ENEMY_TYPE_IDS.length)];
+}
+
 // 8x8 sprite definitions (1 = primary, 2 = secondary, 3 = tertiary)
 const SPRITES = {
-  player: [
-    [0,0,1,1,1,1,0,0],
-    [0,1,2,1,1,2,1,0],
-    [1,1,1,1,1,1,1,1],
-    [1,1,1,2,2,1,1,1],
-    [0,1,1,1,1,1,1,0],
-    [0,0,1,1,1,1,0,0],
-    [0,1,3,0,0,3,1,0],
-    [0,1,0,0,0,0,1,0],
-  ],
-  enemy: [
-    [0,0,1,1,1,1,0,0],
-    [0,1,1,2,2,1,1,0],
-    [1,1,2,1,1,2,1,1],
-    [1,1,1,1,1,1,1,1],
-    [0,1,3,1,1,3,1,0],
-    [0,0,1,1,1,1,0,0],
-    [0,0,0,1,1,0,0,0],
-    [0,0,1,0,0,1,0,0],
-  ],
+  player: CHARACTERS.ghost.sprite,
+  enemy: ENEMY_TYPES.drone.sprite,
   boss: [
     [0,1,1,1,1,1,1,0],
     [1,2,1,1,1,1,2,1],
@@ -76,8 +242,8 @@ export function drawBackground(ctx, w, h) {
   }
 }
 
-export function drawSprite(ctx, name, x, y, size, colorSet) {
-  const sprite = SPRITES[name];
+export function drawSprite(ctx, name, x, y, size, colorSet, spriteData) {
+  const sprite = spriteData || SPRITES[name];
   if (!sprite) return;
 
   const colors = colorSet || COLORS[name] || COLORS.player;

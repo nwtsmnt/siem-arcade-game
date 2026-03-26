@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>SYSTEM BREACH // Arcade Protocol</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
@@ -70,18 +70,16 @@
     </div>
 
     <div id="touch-controls" class="hidden">
-      <div id="touch-dpad">
-        <button class="touch-btn" data-key="w">W</button>
-        <div class="touch-row">
-          <button class="touch-btn" data-key="a">A</button>
-          <button class="touch-btn" data-key="s">S</button>
-          <button class="touch-btn" data-key="d">D</button>
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
         </div>
       </div>
       <div id="touch-actions">
+        <button class="touch-btn touch-small touch-pause" data-key="escape">| |</button>
+        <button class="touch-btn touch-small" data-key="e">E</button>
+        <button class="touch-btn touch-small" data-key="q">Q</button>
         <button class="touch-btn touch-fire" data-key=" ">FIRE</button>
-        <button class="touch-btn" data-key="q">Q</button>
-        <button class="touch-btn" data-key="e">E</button>
       </div>
     </div>
   </div>

@@ -225,56 +225,108 @@ body {
 /* Touch controls */
 #touch-controls {
   display: none;
-  position: absolute;
-  bottom: 30px;
+  position: fixed;
+  bottom: 0;
   left: 0;
   right: 0;
+  height: 40vh;
   justify-content: space-between;
-  padding: 0 20px;
+  align-items: flex-end;
+  padding: 0 16px 24px;
   z-index: 15;
+  pointer-events: none;
 }
 
-#touch-dpad {
+/* Joystick */
+#joystick-zone {
+  width: 160px;
+  height: 160px;
+  position: relative;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#joystick-base {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(57, 255, 20, 0.08);
+  border: 2px solid rgba(57, 255, 20, 0.3);
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  gap: 4px;
 }
 
-.touch-row {
-  display: flex;
-  gap: 4px;
+#joystick-knob {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(57, 255, 20, 0.35);
+  border: 2px solid rgba(57, 255, 20, 0.7);
+  box-shadow: 0 0 12px rgba(57, 255, 20, 0.4);
+  transition: transform 0.05s ease-out;
 }
 
+/* Action buttons */
 #touch-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: flex-end;
+  pointer-events: auto;
 }
 
 .touch-btn {
   font-family: var(--font-main);
   font-size: 20px;
-  width: 50px;
-  height: 50px;
-  background: rgba(57, 255, 20, 0.15);
+  background: rgba(57, 255, 20, 0.12);
   color: var(--text-green);
-  border: 1px solid var(--text-green);
-  border-radius: 6px;
+  border: 2px solid rgba(57, 255, 20, 0.4);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .touch-fire {
-  width: 70px;
-  height: 70px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: bold;
+  background: rgba(255, 51, 51, 0.15);
+  border-color: rgba(255, 51, 51, 0.5);
+  color: var(--text-red);
+  box-shadow: 0 0 15px rgba(255, 51, 51, 0.2);
+}
+
+.touch-small {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   font-size: 18px;
 }
 
+.touch-btn.touch-active,
 .touch-btn:active {
   background: rgba(57, 255, 20, 0.4);
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.5);
+}
+
+.touch-fire.touch-active,
+.touch-fire:active {
+  background: rgba(255, 51, 51, 0.4);
+  box-shadow: 0 0 20px rgba(255, 51, 51, 0.5);
+}
+
+.touch-pause {
+  background: rgba(255, 204, 0, 0.1);
+  border-color: rgba(255, 204, 0, 0.4);
+  color: var(--text-amber);
+  font-size: 14px;
+  width: 44px;
+  height: 44px;
 }
 
 /* Login Screen */
@@ -399,8 +451,101 @@ body {
 }
 
 @media (max-width: 768px) {
-  #hud { font-size: 16px; padding: 4px 8px; }
+  body {
+    align-items: flex-start;
+  }
+
+  #game-wrapper {
+    width: 100vw;
+    height: 60vh;
+  }
+
+  #game-canvas {
+    height: 60vh;
+    width: 100vw;
+    object-fit: contain;
+  }
+
+  #hud {
+    font-size: 14px;
+    padding: 2px 8px;
+  }
+
+  #hud-left, #hud-right {
+    gap: 10px;
+  }
+
+  #hud-session {
+    display: none;
+  }
+
   #controls-legend { display: none !important; }
   #touch-controls.visible { display: flex !important; }
-  #mission-text { font-size: 24px; }
+  #mission-text { font-size: 22px; }
+
+  #log-export {
+    top: auto;
+    bottom: 42vh;
+    font-size: 13px;
+  }
+
+  #export-btn {
+    font-size: 13px;
+    padding: 3px 10px;
+  }
+
+  /* Adjust terminal overlay for mobile */
+  #terminal-content {
+    width: 95%;
+    max-height: 50vh;
+    padding: 14px;
+  }
+
+  #terminal-header { font-size: 22px; }
+  #terminal-body { font-size: 16px; }
+  #terminal-footer { font-size: 14px; }
+
+  /* Login screen mobile */
+  #login-box {
+    padding: 30px 24px;
+  }
+
+  #login-title {
+    font-size: 36px;
+  }
+
+  #login-subtitle {
+    font-size: 16px;
+  }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  #game-wrapper {
+    height: 100vh;
+  }
+
+  #game-canvas {
+    height: 100vh;
+  }
+
+  #touch-controls.visible {
+    height: 50vh;
+    padding-bottom: 10px;
+  }
+
+  .touch-fire {
+    width: 64px;
+    height: 64px;
+  }
+
+  .touch-small {
+    width: 44px;
+    height: 44px;
+  }
+
+  #joystick-zone {
+    width: 130px;
+    height: 130px;
+  }
 }

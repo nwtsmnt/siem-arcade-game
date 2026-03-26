@@ -155,6 +155,29 @@ const EVENT_MAP = {
     message: (p, data) => `GAME OVER for ${p.name}. Final score: ${data.score}`,
   },
 
+  // Power-ups
+  powerup_pickup: {
+    category: ['process'],
+    type: ['info'],
+    severity: 0,
+    level: 'info',
+    message: (p, data) => `Player ${p.name} picked up ${data.powerup}: ${data.description} (${data.duration})`,
+  },
+  powerup_expired: {
+    category: ['process'],
+    type: ['end'],
+    severity: 0,
+    level: 'info',
+    message: (p, data) => `Power-up ${data.powerup} expired for ${p.name}${data.reason ? ` (${data.reason})` : ''}`,
+  },
+  powerup_use: {
+    category: ['process'],
+    type: ['info'],
+    severity: 0,
+    level: 'info',
+    message: (p, data) => `Player ${p.name} used ${data.powerup} (${data.chargesRemaining} charges left)`,
+  },
+
 };
 
 export function setAuthUser(username, ip, loginCount) {
