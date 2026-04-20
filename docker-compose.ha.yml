@@ -1,0 +1,236 @@
+name: siem-arcade
+
+# ─── All services run in host network namespace ────────────────────────────
+# Each service binds to 127.0.0.1 on a unique port (private to the host).
+# Only Nginx exposes itself on 0.0.0.0 — that's the only externally reachable
+# port. On a VPS you'd put the host firewall / IP allowlist in front of :9000
+# and :12201.
+
+x-no-network: &no_network
+  # keep this empty — reminder that services use network_mode: host
+
+services:
+  # ─── MongoDB replica set (3 nodes) ─────────────────────────────────────────
+  mongo1:
+    image: mongo:7
+    network_mode: host
+    command: ["mongod", "--replSet", "rs0", "--bind_ip", "127.0.0.1", "--port", "27011"]
+    volumes:
+      - mongo1_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27011 --eval \"db.runCommand('ping').ok\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  mongo2:
+    image: mongo:7
+    network_mode: host
+    command: ["mongod", "--replSet", "rs0", "--bind_ip", "127.0.0.1", "--port", "27012"]
+    volumes:
+      - mongo2_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27012 --eval \"db.runCommand('ping').ok\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  mongo3:
+    image: mongo:7
+    network_mode: host
+    command: ["mongod", "--replSet", "rs0", "--bind_ip", "127.0.0.1", "--port", "27013"]
+    volumes:
+      - mongo3_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27013 --eval \"db.runCommand('ping').ok\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: initiate the replica set once all three Mongo nodes are healthy
+  mongo-init:
+    image: mongo:7
+    network_mode: host
+    depends_on:
+      mongo1: { condition: service_healthy }
+      mongo2: { condition: service_healthy }
+      mongo3: { condition: service_healthy }
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongosh --host 127.0.0.1 --port 27011 --quiet <<EOF
+        try {
+          rs.status();
+          print("Replica set already initialised");
+        } catch (e) {
+          rs.initiate({
+            _id: "rs0",
+            members: [
+              { _id: 0, host: "127.0.0.1:27011", priority: 2 },
+              { _id: 1, host: "127.0.0.1:27012", priority: 1 },
+              { _id: 2, host: "127.0.0.1:27013", priority: 1 }
+            ]
+          });
+          print("Replica set initialised");
+        }
+        EOF
+
+  # ─── OpenSearch cluster (3 nodes, replica=1) ───────────────────────────────
+  os1:
+    image: opensearchproject/opensearch:2.15.0
+    network_mode: host
+    environment:
+      - cluster.name=graylog-cluster
+      - node.name=os1
+      - network.host=127.0.0.1
+      - http.port=9201
+      - transport.port=9301
+      - discovery.seed_hosts=127.0.0.1:9301,127.0.0.1:9302,127.0.0.1:9303
+      - cluster.initial_cluster_manager_nodes=os1,os2,os3
+      - bootstrap.memory_lock=true
+      - plugins.security.disabled=true
+      - action.auto_create_index=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-<REDACTED-OPENSEARCH-PASSWORD>}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - os1_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9201/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  os2:
+    image: opensearchproject/opensearch:2.15.0
+    network_mode: host
+    environment:
+      - cluster.name=graylog-cluster
+      - node.name=os2
+      - network.host=127.0.0.1
+      - http.port=9202
+      - transport.port=9302
+      - discovery.seed_hosts=127.0.0.1:9301,127.0.0.1:9302,127.0.0.1:9303
+      - cluster.initial_cluster_manager_nodes=os1,os2,os3
+      - bootstrap.memory_lock=true
+      - plugins.security.disabled=true
+      - action.auto_create_index=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-<REDACTED-OPENSEARCH-PASSWORD>}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - os2_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9202/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  os3:
+    image: opensearchproject/opensearch:2.15.0
+    network_mode: host
+    environment:
+      - cluster.name=graylog-cluster
+      - node.name=os3
+      - network.host=127.0.0.1
+      - http.port=9203
+      - transport.port=9303
+      - discovery.seed_hosts=127.0.0.1:9301,127.0.0.1:9302,127.0.0.1:9303
+      - cluster.initial_cluster_manager_nodes=os1,os2,os3
+      - bootstrap.memory_lock=true
+      - plugins.security.disabled=true
+      - action.auto_create_index=false
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-<REDACTED-OPENSEARCH-PASSWORD>}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - os3_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9203/ || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # ─── Graylog nodes (2, behind Nginx) ───────────────────────────────────────
+  graylog1:
+    image: graylog/graylog:6.1
+    network_mode: host
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      os1: { condition: service_healthy }
+      os2: { condition: service_healthy }
+      os3: { condition: service_healthy }
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET:?set in .env}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2:?set in .env}
+      - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}
+      - GRAYLOG_HTTP_BIND_ADDRESS=127.0.0.1:9001
+      - GRAYLOG_IS_LEADER=true
+      - GRAYLOG_MONGODB_URI=mongodb://127.0.0.1:27011,127.0.0.1:27012,127.0.0.1:27013/graylog?replicaSet=rs0
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://127.0.0.1:9201,http://127.0.0.1:9202,http://127.0.0.1:9203
+      - GRAYLOG_REPORT_DISABLE_SANDBOX=true
+    volumes:
+      - graylog1_data:/usr/share/graylog/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9001/api/system/lbstatus || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  graylog2:
+    image: graylog/graylog:6.1
+    network_mode: host
+    depends_on:
+      mongo-init: { condition: service_completed_successfully }
+      os1: { condition: service_healthy }
+      os2: { condition: service_healthy }
+      os3: { condition: service_healthy }
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET:?set in .env}
+      - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2:?set in .env}
+      - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}
+      - GRAYLOG_HTTP_BIND_ADDRESS=127.0.0.1:9002
+      - GRAYLOG_IS_LEADER=false
+      - GRAYLOG_MONGODB_URI=mongodb://127.0.0.1:27011,127.0.0.1:27012,127.0.0.1:27013/graylog?replicaSet=rs0
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://127.0.0.1:9201,http://127.0.0.1:9202,http://127.0.0.1:9203
+      - GRAYLOG_REPORT_DISABLE_SANDBOX=true
+    volumes:
+      - graylog2_data:/usr/share/graylog/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9002/api/system/lbstatus || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  # ─── Nginx LB (0.0.0.0:9000 UI, 0.0.0.0:12201 GELF) ────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    network_mode: host
+    depends_on:
+      graylog1: { condition: service_healthy }
+      graylog2: { condition: service_healthy }
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+  os1_data:
+  os2_data:
+  os3_data:
+  graylog1_data:
+  graylog2_data:

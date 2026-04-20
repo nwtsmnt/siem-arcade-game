@@ -3,11 +3,13 @@
 SIEM Log Relay Server
 - Receives logs via HTTP POST from the game
 - Appends each log to a .ndjson file on disk
-- Optionally forwards to Logstash HTTP input
+- Optionally forwards to Logstash HTTP input or Graylog GELF HTTP input
 - Also serves the game files (no separate web server needed)
 
 Usage:
-  python3 log-server.py [--port 8080] [--logfile logs/game-logs.ndjson] [--forward http://localhost:5044]
+  python3 log-server.py [--port 8080] [--logfile logs/game-logs.ndjson] \\
+                        [--forward http://localhost:5044] \\
+                        [--gelf http://localhost:12201/gelf]
 
 Endpoints:
   GET  /           → serves game files
@@ -20,6 +22,7 @@ import hashlib
 import json
 import os
 import random
+import socket
 import sys
 import threading
 import time
@@ -35,6 +38,62 @@ ADMIN_PASSWORD_HASH = hashlib.sha256('admin'.encode('utf-8')).hexdigest()
 # Attack simulation state
 active_simulations = {}
 sim_lock = threading.Lock()
+
+# ECS log.level → syslog severity (what GELF expects)
+GELF_LEVEL_MAP = {
+    'debug': 7, 'info': 6, 'notice': 5,
+    'warn': 4, 'warning': 4,
+    'error': 3, 'critical': 2, 'alert': 1, 'emergency': 0,
+}
+
+
+def _flatten_for_gelf(obj, prefix):
+    """Flatten nested ECS into GELF additional fields (leading-underscore scalar keys)."""
+    out = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            safe_k = k.lstrip('@').replace('.', '_')
+            out.update(_flatten_for_gelf(v, f'{prefix}_{safe_k}'))
+    elif isinstance(obj, list):
+        if all(isinstance(x, (str, int, float, bool)) for x in obj):
+            out[prefix] = ','.join(str(x) for x in obj)
+        else:
+            out[prefix] = json.dumps(obj, separators=(',', ':'))
+    elif obj is not None:
+        out[prefix] = obj
+    return out
+
+
+def ecs_to_gelf(log_entry, source_host):
+    """Convert an ECS log entry into a GELF 1.1 document."""
+    ts_str = log_entry.get('@timestamp')
+    try:
+        ts = datetime.fromisoformat(ts_str.replace('Z', '+00:00')).timestamp()
+    except (ValueError, AttributeError, TypeError):
+        ts = datetime.now(timezone.utc).timestamp()
+
+    level_str = log_entry.get('log', {}).get('level', 'info').lower()
+    level = GELF_LEVEL_MAP.get(level_str, 6)
+
+    short_msg = (
+        log_entry.get('message')
+        or log_entry.get('event', {}).get('action')
+        or 'event'
+    )
+
+    gelf = {
+        'version': '1.1',
+        'host': source_host,
+        'short_message': short_msg,
+        'timestamp': ts,
+        'level': level,
+    }
+    for k, v in log_entry.items():
+        if k in ('@timestamp', 'message'):
+            continue
+        safe_k = k.lstrip('@').replace('.', '_')
+        gelf.update(_flatten_for_gelf(v, f'_{safe_k}'))
+    return gelf
 
 
 def load_users():
@@ -57,6 +116,8 @@ def hash_password(password):
 class LogRelayHandler(SimpleHTTPRequestHandler):
     log_file = None
     forward_url = None
+    gelf_url = None
+    gelf_host = 'siem-arcade-game'
     log_count = 0
 
     def send_json(self, code, data):
@@ -72,6 +133,64 @@ class LogRelayHandler(SimpleHTTPRequestHandler):
         if forwarded:
             return forwarded.split(',')[0].strip()
         return self.client_address[0]
+
+    def emit_auth_log(self, action, outcome, username, client_ip, level, message):
+        """Emit a server-side ECS auth log and push through the same pipeline
+        as client-submitted logs (file + GELF). This ensures every auth attempt
+        is recorded, even from non-browser clients (attackers, curl, scripts).
+        """
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        category = ['authentication']
+        if action == 'user_register':
+            category.append('iam')
+        entry = {
+            '@timestamp': ts,
+            'event': {
+                'kind': 'event',
+                'category': category,
+                'type': ['start' if outcome == 'success' else 'start'],
+                'action': action,
+                'outcome': outcome,
+                'severity': 0 if outcome == 'success' else 3,
+                'provider': 'auth-server',
+            },
+            'user': {'name': username},
+            'source': {'ip': client_ip},
+            'message': message,
+            'log': {'level': level, 'logger': 'log-server.auth'},
+            'ecs': {'version': '8.11'},
+        }
+        line = json.dumps(entry, separators=(',', ':'))
+        if LogRelayHandler.log_file:
+            try:
+                with open(LogRelayHandler.log_file, 'a') as f:
+                    f.write(line + '\n')
+            except Exception:
+                pass
+        if LogRelayHandler.gelf_url:
+            try:
+                gelf = ecs_to_gelf(entry, LogRelayHandler.gelf_host)
+                req = urllib.request.Request(
+                    LogRelayHandler.gelf_url,
+                    data=json.dumps(gelf).encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                urllib.request.urlopen(req, timeout=2)
+            except Exception:
+                pass
+        if LogRelayHandler.forward_url:
+            try:
+                req = urllib.request.Request(
+                    LogRelayHandler.forward_url,
+                    data=line.encode('utf-8'),
+                    headers={'Content-Type': 'application/json'},
+                    method='POST',
+                )
+                urllib.request.urlopen(req, timeout=2)
+            except Exception:
+                pass
+        LogRelayHandler.log_count += 1
 
     def do_POST(self):
         if self.path == '/api/auth':
@@ -112,6 +231,8 @@ class LogRelayHandler(SimpleHTTPRequestHandler):
                     save_users(users)
                     is_admin = username == ADMIN_USERNAME
                     print(f'  [AUTH] LOGIN SUCCESS: {username} from {client_ip}{" [ADMIN]" if is_admin else ""}')
+                    self.emit_auth_log('user_login', 'success', username, client_ip, 'info',
+                                       f'User {username} logged in successfully from {client_ip}')
                     self.send_json(200, {
                         'status': 'success',
                         'message': f'Welcome back, {username}!',
@@ -122,6 +243,8 @@ class LogRelayHandler(SimpleHTTPRequestHandler):
                     })
                 else:
                     print(f'  [AUTH] LOGIN FAILED: {username} from {client_ip} (wrong password)')
+                    self.emit_auth_log('auth_failure', 'failure', username, client_ip, 'warn',
+                                       f'Authentication failed for user "{username}" from {client_ip} — wrong password')
                     self.send_json(401, {
                         'status': 'wrong_password',
                         'message': 'User exists but password is incorrect.',
@@ -140,6 +263,8 @@ class LogRelayHandler(SimpleHTTPRequestHandler):
                 save_users(users)
                 is_admin = username == ADMIN_USERNAME
                 print(f'  [AUTH] NEW USER: {username} registered from {client_ip}')
+                self.emit_auth_log('user_register', 'success', username, client_ip, 'info',
+                                   f'New account registered: {username} from {client_ip}')
                 self.send_json(201, {
                     'status': 'created',
                     'message': f'Account created! Welcome, {username}!',
@@ -181,8 +306,23 @@ class LogRelayHandler(SimpleHTTPRequestHandler):
                             method='POST'
                         )
                         urllib.request.urlopen(req, timeout=2)
-                    except Exception as e:
+                    except Exception:
                         # Don't fail if Logstash is down
+                        pass
+
+                # Forward to Graylog as GELF
+                if LogRelayHandler.gelf_url:
+                    try:
+                        gelf_doc = ecs_to_gelf(log_entry, LogRelayHandler.gelf_host)
+                        req = urllib.request.Request(
+                            LogRelayHandler.gelf_url,
+                            data=json.dumps(gelf_doc).encode('utf-8'),
+                            headers={'Content-Type': 'application/json'},
+                            method='POST'
+                        )
+                        urllib.request.urlopen(req, timeout=2)
+                    except Exception:
+                        # Don't fail if Graylog is down
                         pass
 
                 LogRelayHandler.log_count += 1
@@ -537,6 +677,9 @@ def main():
     parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
     parser.add_argument('--logfile', type=str, default='logs/game-logs.ndjson', help='Output log file path')
     parser.add_argument('--forward', type=str, default=None, help='Logstash HTTP input URL to forward logs to')
+    parser.add_argument('--gelf', type=str, default=None, help='Graylog GELF HTTP input URL (e.g. http://localhost:12201/gelf)')
+    parser.add_argument('--gelf-host', type=str, default=socket.gethostname() or 'siem-arcade-game',
+                        help='Source host name to tag GELF messages with (default: machine hostname)')
     args = parser.parse_args()
 
     # Ensure log directory exists
@@ -546,6 +689,8 @@ def main():
 
     LogRelayHandler.log_file = args.logfile
     LogRelayHandler.forward_url = args.forward
+    LogRelayHandler.gelf_url = args.gelf
+    LogRelayHandler.gelf_host = args.gelf_host
 
     print(f'========================================')
     print(f'  SIEM Game Log Relay Server')
@@ -555,6 +700,8 @@ def main():
     print(f'  Log file: {args.logfile}')
     if args.forward:
         print(f'  Forward:  {args.forward}')
+    if args.gelf:
+        print(f'  GELF:     {args.gelf}  (host={args.gelf_host})')
     print(f'========================================')
     print(f'  Waiting for logs...\n')
 
