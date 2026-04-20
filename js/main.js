@@ -76,6 +76,7 @@ window.addEventListener('DOMContentLoaded', () => {
           loginScreen.classList.add('hidden');
           gameWrapper.classList.remove('hidden');
           initGame();
+          attachLogout(data.username);
         }, 800);
 
       } else if (data.status === 'wrong_password') {
@@ -95,6 +96,23 @@ window.addEventListener('DOMContentLoaded', () => {
       loginBtn.disabled = false;
       loginBtn.textContent = 'AUTHENTICATE';
     }
+  }
+
+  function attachLogout(username) {
+    const btn = document.getElementById('logout-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'BYE...';
+      try {
+        await fetch('/api/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username }),
+        });
+      } catch (_) { /* server-side log is best-effort */ }
+      window.location.href = '/';
+    });
   }
 
   loginBtn.addEventListener('click', doLogin);

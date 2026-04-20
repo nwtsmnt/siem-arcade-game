@@ -173,6 +173,7 @@ services:
       os3: { condition: service_healthy }
     environment:
       - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET:?set in .env}
+      - GRAYLOG_ROOT_USERNAME=${GRAYLOG_ROOT_USERNAME:-socadmin}
       - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2:?set in .env}
       - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}
       - GRAYLOG_HTTP_BIND_ADDRESS=127.0.0.1:9001
@@ -199,6 +200,7 @@ services:
       os3: { condition: service_healthy }
     environment:
       - GRAYLOG_PASSWORD_SECRET=${GRAYLOG_PASSWORD_SECRET:?set in .env}
+      - GRAYLOG_ROOT_USERNAME=${GRAYLOG_ROOT_USERNAME:-socadmin}
       - GRAYLOG_ROOT_PASSWORD_SHA2=${GRAYLOG_ROOT_PASSWORD_SHA2:?set in .env}
       - GRAYLOG_HTTP_EXTERNAL_URI=${GRAYLOG_HTTP_EXTERNAL_URI:-http://localhost:9000/}
       - GRAYLOG_HTTP_BIND_ADDRESS=127.0.0.1:9002

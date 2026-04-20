@@ -106,10 +106,19 @@
       font-size: 16px; text-decoration: none;
     }
     .back-link:hover { text-shadow: 0 0 8px rgba(0,255,255,0.5); }
+    .logout-btn {
+      position: absolute; top: 16px; right: 16px;
+      background: transparent; color: #ff3333;
+      border: 1px solid #ff3333; padding: 4px 14px;
+      font-family: 'VT323', monospace; font-size: 16px;
+      cursor: pointer; letter-spacing: 1px; transition: all 0.15s;
+    }
+    .logout-btn:hover { background: rgba(255,51,51,0.15); box-shadow: 0 0 8px rgba(255,51,51,0.4); }
   </style>
 </head>
 <body>
   <div class="header">
+    <button class="logout-btn" id="logoutBtn" title="Log out">LOGOUT</button>
     <h1>// ATTACK SIMULATOR //</h1>
     <p>SIEM Training — Log Generation Control Panel</p>
   </div>
@@ -140,6 +149,34 @@
   <div class="section">
     <div class="section-title">LAUNCH ATTACK SIMULATION</div>
     <div class="attack-grid">
+
+      <div class="attack-card" style="border-color:#00ffff;">
+        <div class="attack-name" style="color:#00ffff;">Load Test (synthetic events)</div>
+        <div class="attack-desc">
+          Capacity validation — generate up to 20,000 events/sec over GELF TCP
+          to prove the pipeline clears the 10k target. Events tagged
+          <code>labels.load_test=1</code>, excluded from detection rules, tagged
+          with fake usernames (<code>loadtest_*</code>) so they don't inflate
+          real player counts.
+        </div>
+        <span class="attack-severity" style="background:rgba(0,255,255,0.15);color:#00ffff;border:1px solid #00ffff;">METRIC</span>
+        <div class="controls">
+          <div class="control-group">
+            <label>Target rate (eps)</label>
+            <input type="number" id="load-rate" value="10000" min="100" max="20000" step="500">
+          </div>
+          <div class="control-group">
+            <label>Duration</label>
+            <select id="load-duration">
+              <option value="10">10 sec</option>
+              <option value="30" selected>30 sec</option>
+              <option value="60">1 min</option>
+              <option value="300">5 min</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn" style="background:rgba(0,255,255,0.1);color:#00ffff;border-color:#00ffff;" onclick="launchLoad()">RUN LOAD TEST</button>
+      </div>
 
       <div class="attack-card">
         <div class="attack-name">Normal Activity</div>
@@ -177,47 +214,25 @@
       </div>
 
       <div class="attack-card">
-        <div class="attack-name">DDoS Simulation</div>
-        <div class="attack-desc">Flood of connection attempts from thousands of distributed IPs</div>
+        <div class="attack-name">DoS Simulation (single-source)</div>
+        <div class="attack-desc">High-rate flood from a single attacker IP — trips the per-IP DoS flood rule (≥30 events/10s)</div>
+        <span class="attack-severity sev-high">HIGH</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="dos-intensity"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="dos-duration"><option value="15" selected>15 sec</option><option value="30">30 sec</option><option value="60">1 min</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('dos','dos')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">DDoS Simulation (distributed)</div>
+        <div class="attack-desc">Flood from thousands of random IPs — trips the global DDoS flood rule (≥300 events/30s)</div>
         <span class="attack-severity sev-critical">CRITICAL</span>
         <div class="controls">
-          <div class="control-group"><label>Intensity</label><select id="ddos-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Intensity</label><select id="ddos-intensity"><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option></select></div>
           <div class="control-group"><label>Duration</label><select id="ddos-duration"><option value="30">30 sec</option><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
         </div>
         <button class="btn btn-attack" onclick="launch('ddos','ddos')">LAUNCH</button>
-      </div>
-
-      <div class="attack-card">
-        <div class="attack-name">Privilege Escalation</div>
-        <div class="attack-desc">Legitimate user gains elevated access and performs admin-level actions</div>
-        <span class="attack-severity sev-critical">CRITICAL</span>
-        <div class="controls">
-          <div class="control-group"><label>Intensity</label><select id="privesc-intensity"><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-          <div class="control-group"><label>Duration</label><select id="privesc-duration"><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
-        </div>
-        <button class="btn btn-attack" onclick="launch('privilege_escalation','privesc')">LAUNCH</button>
-      </div>
-
-      <div class="attack-card">
-        <div class="attack-name">Data Exfiltration</div>
-        <div class="attack-desc">Spike in terminal access with large data downloads — data theft pattern</div>
-        <span class="attack-severity sev-critical">CRITICAL</span>
-        <div class="controls">
-          <div class="control-group"><label>Intensity</label><select id="exfil-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
-          <div class="control-group"><label>Duration</label><select id="exfil-duration"><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
-        </div>
-        <button class="btn btn-attack" onclick="launch('data_exfiltration','exfil')">LAUNCH</button>
-      </div>
-
-      <div class="attack-card">
-        <div class="attack-name">Insider Threat</div>
-        <div class="attack-desc">Legitimate user with unusual activity patterns — off-hours access, restricted terminals</div>
-        <span class="attack-severity sev-medium">MEDIUM</span>
-        <div class="controls">
-          <div class="control-group"><label>Intensity</label><select id="insider-intensity"><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-          <div class="control-group"><label>Duration</label><select id="insider-duration"><option value="60">1 min</option><option value="300" selected>5 min</option></select></div>
-        </div>
-        <button class="btn btn-attack" onclick="launch('insider_threat','insider')">LAUNCH</button>
       </div>
 
       <div class="attack-card">
@@ -242,10 +257,24 @@
   </div>
 
   <a href="/" class="back-link">[EXIT TO GAME]</a>
+  &nbsp; &nbsp;
+  <a href="http://localhost:8090/" target="_blank" class="back-link" style="color:#ff3333;">[OPEN SOC CONSOLE ↗]</a>
 
   <script>
     let lastTotal = 0;
     let lastTime = Date.now();
+
+    async function launchLoad() {
+      const rate = parseInt(document.getElementById('load-rate').value, 10) || 1000;
+      const duration = parseInt(document.getElementById('load-duration').value, 10) || 30;
+      const res = await fetch('/api/simulate', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: 'load_test', rate, duration}),
+      });
+      const data = await res.json();
+      console.log('Load test launched:', data);
+      updateStatus();
+    }
 
     async function launch(type, prefix) {
       const params = {
@@ -267,6 +296,18 @@
       await fetch('/api/simulate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({type: 'stop_all'}) });
       updateStatus();
     }
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('logoutBtn');
+      btn.disabled = true; btn.textContent = 'BYE...';
+      try {
+        await fetch('/api/logout', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ username: 'socadmin' }),
+        });
+      } catch (_) {}
+      window.location.href = '/';
+    });
 
     async function updateStatus() {
       try {

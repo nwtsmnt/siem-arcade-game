@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Catnip Games — SOC Console</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgb(203 213 225); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(148 163 184); }
+  .ink { color: #0f172a; }
+  .bell-pulse { animation: bellPulse 1s ease-in-out 3; }
+  @keyframes bellPulse { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-10deg)} 75%{transform:rotate(10deg)} }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!-- ╔══ LOGIN ══╗ -->
+<div id="login" class="min-h-screen flex items-center justify-center px-4">
+  <div class="w-full max-w-md bg-white rounded-xl shadow-lg border border-slate-200 p-8">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">CG</div>
+      <div>
+        <div class="text-lg font-semibold ink">Catnip Games</div>
+        <div class="text-xs text-slate-500 -mt-0.5">Security Operations Center</div>
+      </div>
+    </div>
+    <h1 class="text-xl font-semibold ink mb-1">Sign in</h1>
+    <p class="text-sm text-slate-500 mb-6">Analyst authentication required.</p>
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Username</label>
+        <input id="login-user" value="socadmin" autocomplete="username" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+      </div>
+      <div>
+        <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Password</label>
+        <input id="login-pass" type="password" autocomplete="current-password" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+      </div>
+      <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors" type="submit">Sign in</button>
+      <div id="login-error" class="text-sm text-red-600 min-h-[1.25rem]"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ╔══ CONSOLE ══╗ -->
+<div id="console" class="hidden min-h-screen">
+  <div class="flex">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="w-60 bg-slate-900 text-slate-100 min-h-screen flex flex-col fixed inset-y-0 left-0 z-10">
+      <div class="h-16 flex items-center gap-3 px-5 border-b border-slate-800">
+        <div class="w-8 h-8 bg-indigo-500 rounded-md flex items-center justify-center text-white font-bold text-sm">CG</div>
+        <div>
+          <div class="text-sm font-semibold">Catnip Games</div>
+          <div class="text-[11px] text-slate-400 -mt-0.5">SOC Console</div>
+        </div>
+      </div>
+      <nav id="nav" class="flex-1 py-3 px-3 space-y-1 text-sm">
+        <!-- populated by JS -->
+      </nav>
+      <div class="p-4 border-t border-slate-800 text-sm">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-xs font-semibold">AD</div>
+          <div>
+            <div class="font-medium" id="user-label">socadmin</div>
+            <div class="text-[11px] text-slate-400">Security analyst</div>
+          </div>
+        </div>
+        <button id="logout-btn" class="w-full text-xs text-slate-400 hover:text-red-400 px-2 py-1.5 rounded border border-slate-700 hover:border-red-400 transition">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ── MAIN ── -->
+    <div class="flex-1 ml-60">
+
+      <!-- Top header -->
+      <header class="sticky top-0 z-[5] bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6">
+        <div>
+          <h1 id="page-title" class="text-lg font-semibold ink">Overview</h1>
+          <p id="page-subtitle" class="text-xs text-slate-500 -mt-0.5">Real-time security posture</p>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span id="live-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span id="live-label">Connecting…</span>
+          </div>
+          <a href="http://localhost:9000" target="_blank" class="text-xs text-slate-600 hover:text-indigo-600 border border-slate-300 rounded-md px-3 py-1.5">Open Graylog ↗</a>
+          <button id="bell-btn" class="relative p-2 rounded-md hover:bg-slate-100" data-go="alerts">
+            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            <span id="bell-count" class="hidden absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-semibold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">0</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- ═══ OVERVIEW TAB ═══ -->
+      <section data-panel="overview" class="p-6 space-y-6">
+        <!-- Security alert banner -->
+        <div id="alert-banner" class="hidden"></div>
+
+        <!-- KPIs (click any tile to drill down to Live events / Alerts) -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-indigo-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="events" data-q="*" data-range="300" title="Open Live events — last 5 min">
+            <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Events / sec</div>
+            <div class="text-2xl font-semibold ink mt-1" id="kpi-eps">—</div>
+            <div class="text-[11px] text-indigo-600 mt-1">Open live stream →</div>
+          </button>
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-indigo-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="events" data-q="*" data-range="3600" title="Open Live events — last 1h">
+            <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Events (1h)</div>
+            <div class="text-2xl font-semibold ink mt-1" id="kpi-events-1h">—</div>
+            <div class="text-[11px] text-indigo-600 mt-1">Open last 1h →</div>
+          </button>
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-emerald-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="events" data-q="event_outcome:success AND event_action:login" data-range="3600" title="Open successful logins — last 1h">
+            <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Active players</div>
+            <div class="text-2xl font-semibold text-emerald-600 mt-1" id="kpi-active">—</div>
+            <div class="text-[11px] text-emerald-600 mt-1">See successful logins →</div>
+          </button>
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-amber-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="events" data-q="event_action:session_end OR event_action:user_logout" data-range="3600" title="Open logout events — last 1h">
+            <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Idle players</div>
+            <div class="text-2xl font-semibold text-amber-600 mt-1" id="kpi-idle">—</div>
+            <div class="text-[11px] text-amber-600 mt-1">See disconnects →</div>
+          </button>
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-red-200 p-4 text-left hover:border-red-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="threatmap" title="Open blocked IPs list on threat map">
+            <div class="text-xs font-medium text-red-600 uppercase tracking-wide">Blocked IPs</div>
+            <div class="text-2xl font-semibold text-red-600 mt-1" id="kpi-blocked">—</div>
+            <div class="text-[11px] text-red-600 mt-1">See offenders →</div>
+          </button>
+          <button type="button" class="kpi-tile bg-white rounded-lg border border-red-200 p-4 text-left hover:border-red-400 hover:shadow-sm transition cursor-pointer"
+                  data-go="alerts" title="Open alert queue">
+            <div class="text-xs font-medium text-red-600 uppercase tracking-wide">Alerts (24h)</div>
+            <div class="text-2xl font-semibold text-red-600 mt-1" id="kpi-alerts">—</div>
+            <div class="text-[11px] text-red-600 mt-1">Open queue →</div>
+          </button>
+        </div>
+
+        <!-- Two-column: top alerts + distributions -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-semibold ink">Recent security alerts</h3>
+              <button class="text-xs text-indigo-600 hover:text-indigo-700" data-go="alerts">View all →</button>
+            </div>
+            <div id="overview-alerts" class="space-y-2"></div>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-4">Events by country (1h)</h3>
+            <div class="relative h-60"><canvas id="chart-country-overview"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Three pies -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-3">Player status</h3>
+            <div class="relative h-56"><canvas id="chart-status"></canvas></div>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-3">Players by country</h3>
+            <div class="relative h-56"><canvas id="chart-country"></canvas></div>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-3">Rank distribution</h3>
+            <div class="relative h-56"><canvas id="chart-rank"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ ALERTS TAB ═══ -->
+      <section data-panel="alerts" class="p-6 hidden">
+        <div class="bg-white rounded-lg border border-slate-200 divide-y divide-slate-200">
+          <div class="px-5 py-3 flex items-center justify-between">
+            <div>
+              <div class="font-semibold ink">Incident queue</div>
+              <div class="text-xs text-slate-500">Newest first. Click actions per row to respond.</div>
+            </div>
+            <div class="text-xs text-slate-500"><span id="alerts-count">0</span> total · <span id="alerts-open">0</span> open</div>
+          </div>
+          <div id="alerts-list" class="divide-y divide-slate-200"></div>
+        </div>
+      </section>
+
+      <!-- ═══ LIVE EVENTS TAB ═══ -->
+      <section data-panel="events" class="p-6 hidden space-y-4">
+        <div class="bg-white rounded-lg border border-slate-200 p-4">
+          <div class="flex flex-wrap gap-3 items-center">
+            <input id="events-q" placeholder="Search query (e.g. event_action:auth_failure)" class="flex-1 min-w-[280px] px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <select id="events-range" class="px-3 py-2 text-sm border border-slate-300 rounded-md">
+              <option value="300">Last 5 min</option>
+              <option value="3600" selected>Last 1h</option>
+              <option value="21600">Last 6h</option>
+              <option value="86400">Last 24h</option>
+            </select>
+            <button id="events-pause" class="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50">Pause</button>
+            <button id="events-refresh" class="px-3 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-md">Refresh</button>
+            <button id="events-export" class="px-3 py-2 text-sm border border-slate-300 rounded-md hover:bg-slate-50">Export CSV</button>
+          </div>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+                <tr>
+                  <th class="text-left px-4 py-2.5 font-medium">Status</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Timestamp</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Player</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Country</th>
+                  <th class="text-left px-4 py-2.5 font-medium">IP</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Auth</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Rank</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Session</th>
+                </tr>
+              </thead>
+              <tbody id="events-tbody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+          <div id="events-empty" class="p-8 text-center text-sm text-slate-500 hidden">No events for this query in the selected window.</div>
+        </div>
+      </section>
+
+      <!-- ═══ THREAT MAP TAB ═══ -->
+      <section data-panel="threatmap" class="p-6 space-y-6 hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-3">Activity by country (1h)</h3>
+            <div class="relative h-72"><canvas id="chart-country-big"></canvas></div>
+          </div>
+          <div class="bg-white rounded-lg border border-slate-200 p-5">
+            <h3 class="font-semibold ink mb-3">Top offender IPs — last 24h</h3>
+            <div id="top-offenders" class="space-y-1"></div>
+          </div>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 p-5">
+          <h3 class="font-semibold ink mb-3">Failed logins by country</h3>
+          <div id="failed-by-country" class="space-y-1"></div>
+        </div>
+      </section>
+
+      <!-- ═══ FLEET TAB ═══ -->
+      <section data-panel="fleet" class="p-6 space-y-6 hidden">
+        <div class="bg-white rounded-lg border border-slate-200 p-5">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="font-semibold ink">Registered game servers</h3>
+              <p class="text-xs text-slate-500">Each server tags its logs with host + data-centre. Add here to extend the fleet.</p>
+            </div>
+            <div class="text-sm text-slate-500"><span id="fleet-count">0</span> servers</div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
+                <tr>
+                  <th class="text-left px-4 py-2.5 font-medium">Name</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Data centre</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Environment</th>
+                  <th class="text-left px-4 py-2.5 font-medium">URL</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Registered</th>
+                  <th class="text-right px-4 py-2.5 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody id="fleet-tbody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-red-200 p-5 max-w-2xl">
+          <h3 class="font-semibold text-red-700 mb-2">Danger zone · wipe log history</h3>
+          <p class="text-sm text-slate-600 mb-3">
+            Deletes every <code>graylog_*</code> and <code>gl-events_*</code> index in OpenSearch,
+            cycles the Graylog deflector, and truncates <code>logs/game-logs.ndjson</code>.
+            Keeps configuration (blocklist, disabled users, server registry, event definitions,
+            dashboards, notifications). Use after load tests or demos to start clean.
+          </p>
+          <button id="clean-logs-btn" class="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2 rounded-md">
+            Wipe all logs
+          </button>
+          <span id="clean-logs-status" class="ml-3 text-sm text-slate-500"></span>
+        </div>
+
+        <div class="bg-white rounded-lg border border-slate-200 p-5 max-w-2xl">
+          <h3 class="font-semibold ink mb-4">Register a new server</h3>
+          <form id="fleet-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Server name / hostname</label>
+              <input name="name" placeholder="game-us-east-02" required class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Data centre</label>
+              <select name="data_center" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="eu-west-1">eu-west-1</option>
+                <option value="eu-central-1">eu-central-1</option>
+                <option value="us-east-1">us-east-1</option>
+                <option value="us-west-2">us-west-2</option>
+                <option value="ap-southeast-1">ap-southeast-1</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Environment</label>
+              <select name="environment" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="production">production</option>
+                <option value="staging">staging</option>
+                <option value="development">development</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">URL (optional)</label>
+              <input name="url" placeholder="https://game.example.com" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="md:col-span-2">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">Register server</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ═══ COMPLIANCE TAB ═══ -->
+      <section data-panel="compliance" class="p-6 space-y-6 hidden">
+        <div class="bg-white rounded-lg border border-slate-200 p-5 max-w-3xl">
+          <h3 class="font-semibold ink mb-2">Generate compliance report</h3>
+          <p class="text-sm text-slate-500 mb-4">On-demand audit reports for a specific date range. Reports pull from Graylog and render to self-contained HTML.</p>
+          <form id="compliance-form" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div class="md:col-span-2">
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Standard</label>
+              <select name="standard" class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="gdpr">GDPR (Arts 30 / 32 / 33)</option>
+                <option value="soc2">SOC 2 (CC6 / A1 / PI1 / C1)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">From</label>
+              <input type="date" name="from" required class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">To</label>
+              <input type="date" name="to" required class="mt-1 w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="md:col-span-4 flex gap-3 items-center">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">Generate report</button>
+              <span id="compliance-status" class="text-sm text-slate-500"></span>
+            </div>
+          </form>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 p-5 max-w-3xl">
+          <h3 class="font-semibold ink mb-3">Recent reports</h3>
+          <div id="compliance-recent" class="text-sm text-slate-500">No reports generated this session yet.</div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed top-4 right-4 bg-white border rounded-md shadow-lg px-4 py-3 text-sm max-w-sm z-50"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   Catnip Games SOC Console — front-end
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TABS = [
+  { id: 'overview',   label: 'Overview',      icon: 'chart' },
+  { id: 'alerts',     label: 'Alerts',        icon: 'alert' },
+  { id: 'events',     label: 'Live events',   icon: 'list' },
+  { id: 'threatmap',  label: 'Threat map',    icon: 'globe' },
+  { id: 'fleet',      label: 'Fleet',         icon: 'server' },
+  { id: 'compliance', label: 'Compliance',    icon: 'clipboard' },
+];
+
+const ICONS = {
+  chart:     '<path d="M3 3v18h18"/><path d="M7 15l4-4 4 2 5-6"/>',
+  alert:     '<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  list:      '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
+  globe:     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 010 18"/><path d="M12 3a14 14 0 000 18"/>',
+  server:    '<rect x="2" y="3" width="20" height="8" rx="1"/><rect x="2" y="13" width="20" height="8" rx="1"/><circle cx="6" cy="7" r="1"/><circle cx="6" cy="17" r="1"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>',
+};
+
+/* Globals */
+const state = {
+  alerts: new Map(),
+  acked: new Set(),
+  blocklist: {},
+  disabledUsers: {},
+  servers: [],
+  activeTab: 'overview',
+  charts: {},
+  eventsPaused: false,
+  eventsTimer: null,
+  kpisTimer: null,
+  distTimer: null,
+};
+
+/* ─── API helpers ──────────────────────────────────────────────────── */
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'}, credentials:'same-origin' };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  let d; try { d = await r.json(); } catch { d = {}; }
+  if (!r.ok) throw Object.assign(new Error(d.error || r.statusText), { code: r.status });
+  return d;
+}
+
+function toast(msg, kind='ok', ms=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'fixed top-4 right-4 bg-white rounded-md shadow-lg px-4 py-3 text-sm max-w-sm z-50 border ' +
+    (kind === 'err' ? 'border-red-300 text-red-700'
+     : kind === 'warn' ? 'border-amber-300 text-amber-700'
+     : 'border-emerald-300 text-emerald-700');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ─── Auth flow ───────────────────────────────────────────────────── */
+async function doLogin(e) {
+  e.preventDefault();
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value;
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  try { await api('/api/soc/auth', 'POST', {username:u, password:p}); boot(); }
+  catch { err.textContent = 'Invalid credentials.'; }
+}
+async function doLogout() { try { await api('/api/soc/logout','POST'); } catch {} location.reload(); }
+async function checkAuth() {
+  try { const r = await api('/api/soc/whoami'); if (r.authenticated) boot(); } catch {}
+}
+
+/* ─── Nav ─────────────────────────────────────────────────────────── */
+function renderNav() {
+  const navEl = document.getElementById('nav');
+  navEl.innerHTML = TABS.map(t => `
+    <button data-tab="${t.id}" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-md transition text-left
+            ${state.activeTab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'}">
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">${ICONS[t.icon]}</svg>
+      <span>${t.label}</span>
+    </button>
+  `).join('');
+  navEl.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => goto(b.dataset.tab)));
+}
+
+function goto(tab, opts) {
+  state.activeTab = tab;
+  renderNav();
+  document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
+  const titles = {
+    overview:   ['Overview',      'Real-time security posture'],
+    alerts:     ['Alerts',        'Incident queue · click actions to respond'],
+    events:     ['Live events',   'Searchable event stream'],
+    threatmap:  ['Threat map',    'Activity by country · top offenders'],
+    fleet:      ['Fleet',         'Registered game servers · add / remove'],
+    compliance: ['Compliance',    'On-demand audit reports · GDPR · SOC 2'],
+  };
+  document.getElementById('page-title').textContent = titles[tab][0];
+  document.getElementById('page-subtitle').textContent = titles[tab][1];
+
+  // Optional pre-fill for the Live events tab — drill-through from any KPI
+  // tile or in-table value (IP, player, country) lands here with the filter
+  // already applied, Graylog-style.
+  if (tab === 'events' && opts) {
+    if (opts.q     != null) document.getElementById('events-q').value = opts.q;
+    if (opts.range != null) document.getElementById('events-range').value = String(opts.range);
+  }
+
+  // Tab-specific loaders
+  if (tab === 'events') loadEvents();
+  if (tab === 'threatmap') loadThreatmap();
+  if (tab === 'fleet') loadFleet();
+}
+
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-go]');
+  if (!go) return;
+  // Anchors with href="#" would otherwise jump the page to the top.
+  if (go.tagName === 'A') e.preventDefault();
+  const opts = {};
+  if (go.dataset.q     != null) opts.q = go.dataset.q;
+  if (go.dataset.range != null) opts.range = go.dataset.range;
+  goto(go.dataset.go, Object.keys(opts).length ? opts : undefined);
+});
+
+/* ─── SSE stream (alerts + state changes) ─────────────────────────── */
+function connectSSE() {
+  const es = new EventSource('/api/soc/stream');
+  const dot = document.getElementById('live-dot');
+  const label = document.getElementById('live-label');
+  es.onopen  = () => { dot.className = 'w-2 h-2 rounded-full bg-emerald-500'; label.textContent = 'Live'; label.className = 'text-emerald-600 text-xs'; };
+  es.onerror = () => { dot.className = 'w-2 h-2 rounded-full bg-amber-500';   label.textContent = 'Reconnecting'; label.className = 'text-amber-600 text-xs'; };
+
+  es.addEventListener('alert', e => {
+    const a = JSON.parse(e.data);
+    state.alerts.set(a.id, a);
+    renderAlerts(); renderOverviewAlerts(); renderAlertBanner();
+    const bell = document.getElementById('bell-btn'); bell.classList.add('bell-pulse');
+    setTimeout(() => bell.classList.remove('bell-pulse'), 3000);
+    toast(`New alert: ${a.message || a.rule_title}`, 'err', 3000);
+  });
+  es.addEventListener('state', e => {
+    const s = JSON.parse(e.data);
+    if (s.blocklist) state.blocklist = s.blocklist;
+    if (s.disabled_users) state.disabledUsers = s.disabled_users;
+    renderKpisLocal();
+  });
+  es.addEventListener('state_change', () => { loadStateSnapshot(); });
+}
+
+/* ─── State + KPIs ───────────────────────────────────────────────── */
+async function loadStateSnapshot() {
+  try {
+    const s = await api('/api/soc/state');
+    state.blocklist = s.blocklist || {};
+    state.disabledUsers = s.disabled_users || {};
+    (s.recent_alerts || []).forEach(a => state.alerts.set(a.id, a));
+    Object.keys(s.acked || {}).forEach(id => state.acked.add(id));
+    renderAlerts(); renderOverviewAlerts(); renderAlertBanner(); renderKpisLocal();
+  } catch (e) { console.error(e); }
+}
+
+async function refreshKpis() {
+  try {
+    const k = await api('/api/soc/kpis');
+    document.getElementById('kpi-eps').textContent = k.events_per_sec;
+    document.getElementById('kpi-events-1h').textContent = (k.events_last_hour || 0).toLocaleString();
+    document.getElementById('kpi-active').textContent = k.active_players;
+    document.getElementById('kpi-idle').textContent = k.idle_players;
+    document.getElementById('kpi-blocked').textContent = k.blocked_ips;
+    document.getElementById('kpi-alerts').textContent = k.alerts_last_24h;
+  } catch (e) { console.error(e); }
+  renderKpisLocal();
+}
+
+function renderKpisLocal() {
+  // bell count = un-acked alerts
+  const openCount = [...state.alerts.values()].filter(a => !state.acked.has(a.id)).length;
+  const bell = document.getElementById('bell-count');
+  if (openCount > 0) { bell.textContent = openCount; bell.classList.remove('hidden'); }
+  else { bell.classList.add('hidden'); }
+  document.getElementById('alerts-count').textContent = state.alerts.size;
+  document.getElementById('alerts-open').textContent = openCount;
+}
+
+async function refreshDistributions() {
+  try {
+    const d = await api('/api/soc/distributions?range=86400');
+    // Player status = active/idle/disconnected (distinct users)
+    mkPie('chart-status', d.status, ['#10b981', '#f59e0b', '#ef4444']);
+    // "Events by country" (Overview top-right) = PER-EVENT count, attackers included
+    mkPie('chart-country-overview', d.events_by_country,
+          ['#6366f1','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#64748b','#84cc16']);
+    // "Players by country" (Overview bottom) = DISTINCT PLAYER count
+    mkPie('chart-country', d.players_by_country,
+          ['#6366f1','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#64748b','#84cc16','#ec4899','#14b8a6']);
+    // "Rank distribution" = distinct players grouped by their persistent rank
+    mkPie('chart-rank', d.rank_by_player, ['#cd7f32','#c0c0c0','#ffd700','#e5e4e2','#b9f2ff']);
+    // Threat map uses per-event (traffic volume is what matters for attack analysis)
+    if (state.activeTab === 'threatmap') mkPie('chart-country-big', d.events_by_country,
+          ['#6366f1','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#64748b']);
+  } catch (e) { console.error(e); }
+}
+
+function mkPie(id, data, palette) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const labels = Object.keys(data);
+  const values = labels.map(k => data[k]);
+  if (state.charts[id]) state.charts[id].destroy();
+  state.charts[id] = new Chart(el, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: palette.slice(0, labels.length), borderWidth: 1, borderColor: '#fff' }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '60%',
+      plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } },
+    },
+  });
+}
+
+/* ─── Alerts UI ──────────────────────────────────────────────────── */
+function severityClass(priority) {
+  if (priority >= 3) return { pill: 'bg-red-100 text-red-700',     border: 'border-red-300',    bar: 'bg-red-500' };
+  if (priority >= 2) return { pill: 'bg-amber-100 text-amber-700', border: 'border-amber-300',  bar: 'bg-amber-500' };
+  return { pill: 'bg-yellow-100 text-yellow-700', border: 'border-yellow-300', bar: 'bg-yellow-400' };
+}
+
+function extractEntity(alert) {
+  const f = alert.fields || {};
+  if (f.source_ip) return { type: 'ip', value: f.source_ip };
+  if (f.user_name) return { type: 'user', value: f.user_name };
+  if (alert.key_tuple?.length) {
+    const v = alert.key_tuple[0];
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(v)) return { type: 'ip', value: v };
+    if (v) return { type: 'user', value: v };
+  }
+  return null;
+}
+
+function alertRow(a) {
+  const ent = extractEntity(a);
+  const sev = severityClass(a.priority || 2);
+  const acked = state.acked.has(a.id);
+  const sevLabel = (a.priority >= 3) ? 'CRITICAL' : (a.priority >= 2) ? 'WARNING' : 'CAUTION';
+  const blockBtn = ent?.type === 'ip'
+    ? `<button class="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50" data-action="block_ip" data-ip="${ent.value}">Block IP</button>` : '';
+  const disableBtn = ent?.type === 'user'
+    ? `<button class="text-xs px-2 py-1 rounded border border-orange-300 text-orange-700 hover:bg-orange-50" data-action="disable_user" data-user="${ent.value}">Disable user</button>` : '';
+  const logoutBtn = ent?.type === 'ip'
+    ? `<button class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50" data-action="force_logout_ip" data-ip="${ent.value}">Force logout</button>` : '';
+  const pivotBtn = ent
+    ? `<button class="text-xs px-2 py-1 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50" data-action="pivot" data-pivot="/api/soc/pivot?type=${ent.type}&value=${encodeURIComponent(ent.value)}&hours=1">Pivot → Graylog</button>` : '';
+  const ackBtn = `<button class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50 ${acked?'opacity-50':''}" data-action="ack" data-id="${a.id}" ${acked?'disabled':''}>${acked?'Acked':'Ack'}</button>`;
+
+  return `
+  <div class="px-5 py-4 ${acked ? 'opacity-60' : ''} flex items-start gap-4" data-id="${a.id}">
+    <div class="w-1.5 h-full ${sev.bar} rounded"></div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${sev.pill}">${sevLabel}</span>
+        <span class="text-xs text-slate-500">${(a.timestamp||'').slice(0,19).replace('T',' ')}</span>
+        <span class="text-xs text-slate-400">· ${escapeHtml(a.rule_title||'alert')}</span>
+      </div>
+      <div class="text-sm ink mt-1 font-medium">${escapeHtml(a.message || a.rule_title || 'alert')}</div>
+      <div class="text-xs text-slate-500 mt-0.5 font-mono">${Object.entries(a.fields||{}).map(([k,v])=>`${k}=${v}`).join(' · ') || '—'}</div>
+      <div class="flex gap-2 mt-2 flex-wrap">${blockBtn}${disableBtn}${logoutBtn}${pivotBtn}${ackBtn}</div>
+    </div>
+  </div>`;
+}
+
+function renderAlerts() {
+  const list = [...state.alerts.values()].sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+  const el = document.getElementById('alerts-list');
+  el.innerHTML = list.length ? list.map(alertRow).join('') : '<div class="p-8 text-center text-sm text-slate-500">No alerts yet.</div>';
+  renderKpisLocal();
+}
+
+function renderOverviewAlerts() {
+  const list = [...state.alerts.values()].sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||'')).slice(0,5);
+  const el = document.getElementById('overview-alerts');
+  if (!list.length) { el.innerHTML = '<div class="text-sm text-slate-500 text-center py-4">No alerts.</div>'; return; }
+  el.innerHTML = list.map(a => {
+    const sev = severityClass(a.priority||2);
+    const sevLabel = (a.priority>=3)?'CRITICAL':(a.priority>=2)?'WARNING':'CAUTION';
+    return `<div class="flex items-start gap-3 p-3 rounded border ${sev.border}">
+      <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${sev.pill} whitespace-nowrap">${sevLabel}</span>
+      <div class="flex-1 min-w-0">
+        <div class="text-xs text-slate-500">${(a.timestamp||'').slice(11,19)}</div>
+        <div class="text-sm ink font-medium truncate">${escapeHtml(a.message || a.rule_title)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderAlertBanner() {
+  const unacked = [...state.alerts.values()].filter(a => !state.acked.has(a.id) && (a.priority||2) >= 3).slice(0,1);
+  const el = document.getElementById('alert-banner');
+  if (!unacked.length) { el.classList.add('hidden'); return; }
+  const a = unacked[0];
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="bg-red-50 border border-red-300 rounded-lg p-4 flex items-start gap-3">
+      <svg class="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M19.07 4.93a10 10 0 11-14.14 0 10 10 0 0114.14 0z"/></svg>
+      <div class="flex-1">
+        <div class="font-semibold text-red-800">CRITICAL — ${escapeHtml(a.rule_title||'Security alert')}</div>
+        <div class="text-sm text-red-700 mt-0.5">${escapeHtml(a.message || '')}</div>
+        <button class="mt-2 text-xs px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700" data-go="alerts">View in queue →</button>
+      </div>
+    </div>`;
+}
+
+/* ─── Action buttons ─────────────────────────────────────────────── */
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  try {
+    if (action === 'block_ip') {
+      const alertId = btn.closest('[data-id]')?.dataset.id;
+      const r = await api('/api/soc/block_ip', 'POST', {ip: btn.dataset.ip, reason: 'SOC queue', alert_id: alertId});
+      toast(`Blocked ${btn.dataset.ip} (${r.kernel ? 'kernel+app' : 'app only'})`);
+    } else if (action === 'unblock_ip') {
+      await api('/api/soc/unblock_ip', 'POST', {ip: btn.dataset.ip});
+      toast(`Unblocked ${btn.dataset.ip}`);
+    } else if (action === 'disable_user') {
+      const alertId = btn.closest('[data-id]')?.dataset.id;
+      await api('/api/soc/disable_user', 'POST', {username: btn.dataset.user, reason: 'SOC queue', alert_id: alertId});
+      toast(`Disabled ${btn.dataset.user}`);
+    } else if (action === 'enable_user') {
+      await api('/api/soc/enable_user', 'POST', {username: btn.dataset.user});
+      toast(`Enabled ${btn.dataset.user}`);
+    } else if (action === 'force_logout_ip') {
+      await api('/api/soc/force_logout_ip', 'POST', {ip: btn.dataset.ip});
+      toast(`Force-logout sent for ${btn.dataset.ip}`);
+    } else if (action === 'ack') {
+      await api('/api/soc/ack', 'POST', {id: btn.dataset.id});
+      state.acked.add(btn.dataset.id);
+      renderAlerts(); renderKpisLocal();
+    } else if (action === 'pivot') {
+      const r = await (await fetch(btn.dataset.pivot, {credentials:'same-origin'})).json();
+      window.open(r.url, '_blank');
+    } else if (action === 'delete_server') {
+      if (!confirm(`Deregister ${btn.dataset.id}?`)) return;
+      await api(`/api/soc/servers/${encodeURIComponent(btn.dataset.id)}/delete`, 'POST');
+      toast(`Removed ${btn.dataset.id}`);
+      loadFleet();
+    }
+    loadStateSnapshot();
+  } catch (err) { toast(err.message || 'Action failed', 'err'); }
+});
+
+/* ─── Live events tab ────────────────────────────────────────────── */
+async function loadEvents() {
+  const q = document.getElementById('events-q').value || '*';
+  const range = document.getElementById('events-range').value;
+  try {
+    const r = await api(`/api/soc/events?q=${encodeURIComponent(q)}&range=${range}&limit=100`);
+    const tbody = document.getElementById('events-tbody');
+    const empty = document.getElementById('events-empty');
+    if (!r.events.length) { tbody.innerHTML = ''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    // Click any value to filter the stream down to it — same idea as
+    // Graylog's "add to search" affordance on message fields.
+    const drill = (field, value, label) => {
+      if (!value || value === '—') return `<span>${escapeHtml(label || '—')}</span>`;
+      const q = `${field}:"${String(value).replace(/"/g,'\\"')}"`;
+      return `<a href="#" class="drill-filter text-indigo-600 hover:underline" data-q="${escapeHtml(q)}" title="Filter events by ${field}=${escapeHtml(String(value))}">${escapeHtml(label || String(value))}</a>`;
+    };
+    tbody.innerHTML = r.events.map(evt => {
+      const outcome = evt.event_outcome;
+      const attempts = parseInt(evt.labels_auth_attempts || '0', 10);
+      const statusPill = outcome === 'failure'
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700">FAIL</span>`
+          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100 text-emerald-700">OK</span>`;
+      const authCell = attempts >= 20
+          ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700">${attempts} critical</span>`
+          : attempts >= 5
+          ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">${attempts} warn</span>`
+          : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600">${attempts || '—'}</span>`;
+      const country = evt.source_geo_country_name || '—';
+      const code = evt.source_geo_country_iso_code || '';
+      const countryCell = country === '—'
+          ? '—'
+          : `${drill('source_geo_country_name', country, country)} ${code ? `<span class="text-slate-400 text-xs">(${code})</span>`:''}`;
+      return `<tr class="${outcome === 'failure' ? 'bg-red-50' : ''} hover:bg-slate-50 evt-row" data-raw='${escapeHtml(JSON.stringify(evt))}' style="cursor:pointer">
+        <td class="px-4 py-2.5 whitespace-nowrap">${statusPill}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-500 font-mono whitespace-nowrap">${(evt.timestamp || '').slice(0,19).replace('T',' ')}</td>
+        <td class="px-4 py-2.5 text-slate-700 whitespace-nowrap">${drill('user_name', evt.user_name)}</td>
+        <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${countryCell}</td>
+        <td class="px-4 py-2.5 font-mono text-xs whitespace-nowrap">${drill('source_ip', evt.source_ip)}</td>
+        <td class="px-4 py-2.5 whitespace-nowrap">${authCell}</td>
+        <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${escapeHtml(evt.labels_game_rank || '—')}</td>
+        <td class="px-4 py-2.5 text-slate-400 font-mono text-[11px] whitespace-nowrap">${escapeHtml((evt.session_id || '').slice(0,12))}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById('events-refresh').addEventListener('click', loadEvents);
+document.getElementById('events-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadEvents(); });
+document.getElementById('events-range').addEventListener('change', loadEvents);
+
+// Drill-down on a cell value: combine the current query with the clicked filter.
+function addDrillFilter(add) {
+  const input = document.getElementById('events-q');
+  const existing = (input.value || '').trim();
+  const field = add.split(':')[0];
+  const re = new RegExp(`(^|\\s)${field}:"[^"]*"`, 'g');
+  if (!existing || existing === '*') {
+    input.value = add;
+  } else if (re.test(existing)) {
+    // Replace the existing clause for this field — avoids contradictions.
+    input.value = existing.replace(re, ' ' + add).trim();
+  } else {
+    input.value = `${existing} AND ${add}`;
+  }
+  loadEvents();
+}
+
+document.getElementById('events-tbody').addEventListener('click', e => {
+  const a = e.target.closest('.drill-filter');
+  if (a) {
+    e.preventDefault();
+    addDrillFilter(a.dataset.q);
+    return;
+  }
+  // Row click (not on a drill-filter link) → expand to show the raw event JSON.
+  const row = e.target.closest('.evt-row');
+  if (!row) return;
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('evt-detail')) { next.remove(); return; }
+  try {
+    const raw = JSON.parse(row.dataset.raw);
+    const tr = document.createElement('tr');
+    tr.className = 'evt-detail bg-slate-50';
+    const td = document.createElement('td');
+    td.colSpan = 8;
+    td.className = 'px-4 py-3';
+    const fields = Object.entries(raw)
+        .filter(([,v]) => v !== null && v !== undefined && v !== '')
+        .sort(([a],[b]) => a.localeCompare(b));
+    td.innerHTML = `
+      <div class="text-xs uppercase tracking-wide text-slate-500 mb-2">Message details</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 font-mono text-[11px]">
+        ${fields.map(([k,v]) => `
+          <div class="flex gap-2 py-0.5 border-b border-slate-200">
+            <div class="w-40 text-slate-500 shrink-0">${escapeHtml(k)}</div>
+            <div class="text-slate-800 break-all">${escapeHtml(String(v))}</div>
+          </div>`).join('')}
+      </div>`;
+    tr.appendChild(td);
+    row.after(tr);
+  } catch {}
+});
+document.getElementById('events-pause').addEventListener('click', e => {
+  state.eventsPaused = !state.eventsPaused;
+  e.target.textContent = state.eventsPaused ? 'Resume' : 'Pause';
+  e.target.classList.toggle('bg-amber-100');
+  e.target.classList.toggle('border-amber-300');
+});
+document.getElementById('events-export').addEventListener('click', () => {
+  const q = document.getElementById('events-q').value || '*';
+  const range = document.getElementById('events-range').value;
+  location.href = `/api/soc/export.csv?q=${encodeURIComponent(q)}&range=${range}`;
+});
+
+/* ─── Threat map ─────────────────────────────────────────────────── */
+async function loadThreatmap() {
+  try {
+    const r = await api('/api/soc/distributions?range=86400');
+    mkPie('chart-country-big', r.country, ['#6366f1','#10b981','#f59e0b','#ef4444','#a855f7','#06b6d4','#64748b','#84cc16','#ec4899','#14b8a6']);
+    // Failed-by-country rendered from country table (approx). Also render top offenders from blocklist.
+    const el = document.getElementById('failed-by-country');
+    const sorted = Object.entries(r.country).sort((a,b)=>b[1]-a[1]);
+    el.innerHTML = sorted.map(([c,n]) => `
+      <a href="#" class="flex items-center gap-3 py-1.5 hover:bg-slate-50 rounded px-1 -mx-1"
+         data-go="events" data-q='source_geo_country_name:"${escapeHtml(c)}"' data-range="86400"
+         title="See last 24h of events from ${escapeHtml(c)}">
+        <div class="w-40 text-sm text-indigo-600">${escapeHtml(c)}</div>
+        <div class="flex-1 h-2 bg-slate-100 rounded"><div class="h-2 bg-indigo-500 rounded" style="width:${Math.min(100, (n/sorted[0][1])*100)}%"></div></div>
+        <div class="w-12 text-right text-sm text-slate-600">${n}</div>
+      </a>
+    `).join('') || '<div class="text-sm text-slate-500">No data.</div>';
+    // Top offenders = from blocklist. IPs are clickable → Live events filtered by source_ip.
+    const topEl = document.getElementById('top-offenders');
+    const offenders = Object.entries(state.blocklist).sort((a,b) => (b[1].hit_count||0)-(a[1].hit_count||0));
+    topEl.innerHTML = offenders.length ? offenders.map(([ip, info]) => `
+      <div class="flex items-center gap-3 py-1.5 border-b border-slate-100 last:border-0">
+        <a href="#" class="flex-1 font-mono text-sm text-indigo-600 hover:underline"
+           data-go="events" data-q='source_ip:"${escapeHtml(ip)}"' data-range="86400"
+           title="See last 24h of events from ${escapeHtml(ip)}">${escapeHtml(ip)}</a>
+        <div class="text-xs text-slate-500">${info.hit_count||0} blocked hits</div>
+        <span class="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-700">BLOCKED</span>
+      </div>`).join('') : '<div class="text-sm text-slate-500 p-4">No IPs currently blocked.</div>';
+  } catch (e) { console.error(e); }
+}
+
+/* ─── Fleet ──────────────────────────────────────────────────────── */
+async function loadFleet() {
+  try {
+    const r = await api('/api/soc/servers');
+    state.servers = r.servers;
+    document.getElementById('fleet-count').textContent = state.servers.length;
+    const tbody = document.getElementById('fleet-tbody');
+    tbody.innerHTML = state.servers.map(s => `
+      <tr class="hover:bg-slate-50">
+        <td class="px-4 py-2.5 font-medium ink">${escapeHtml(s.name)}</td>
+        <td class="px-4 py-2.5"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">${escapeHtml(s.data_center || '—')}</span></td>
+        <td class="px-4 py-2.5 text-sm text-slate-600">${escapeHtml(s.environment || '—')}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-500 font-mono">${escapeHtml(s.url || '—')}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-500">${(s.registered_at||'').slice(0,16).replace('T',' ')}</td>
+        <td class="px-4 py-2.5 text-right"><button class="text-xs px-2 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50" data-action="delete_server" data-id="${escapeHtml(s.id)}">Remove</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="p-6 text-center text-sm text-slate-500">No servers registered.</td></tr>';
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById('fleet-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  try { await api('/api/soc/servers', 'POST', payload); toast(`Registered ${payload.name}`); e.target.reset(); loadFleet(); }
+  catch (err) { toast(err.message || 'Failed to add server', 'err'); }
+});
+
+document.getElementById('clean-logs-btn').addEventListener('click', async () => {
+  if (!confirm('Delete ALL log history (Graylog indices + NDJSON archive)?\n\nConfiguration (blocklist, disabled users, servers, rules, dashboards) is preserved.\n\nThis cannot be undone.')) return;
+  const btn = document.getElementById('clean-logs-btn');
+  const status = document.getElementById('clean-logs-status');
+  btn.disabled = true; btn.textContent = 'Wiping…';
+  status.textContent = ''; status.className = 'ml-3 text-sm text-slate-500';
+  try {
+    const r = await api('/api/soc/clean_logs', 'POST');
+    status.textContent = `Deleted ${r.indices_deleted.length} indices · deflector cycled · archive truncated`;
+    status.className = 'ml-3 text-sm text-emerald-600';
+    state.alerts.clear();
+    state.acked.clear();
+    renderAlerts(); renderOverviewAlerts(); renderAlertBanner();
+    loadStateSnapshot(); refreshKpis(); refreshDistributions();
+    toast('Log history wiped', 'ok');
+  } catch (e) {
+    status.textContent = `Failed: ${e.message}`;
+    status.className = 'ml-3 text-sm text-red-600';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Wipe all logs';
+  }
+});
+
+/* ─── Compliance ─────────────────────────────────────────────────── */
+const recentReports = [];
+
+document.getElementById('compliance-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  const status = document.getElementById('compliance-status');
+  status.textContent = 'Generating…';
+  status.className = 'text-sm text-slate-500';
+  try {
+    const r = await api('/api/soc/compliance-report', 'POST', payload);
+    status.textContent = 'Report ready.';
+    status.className = 'text-sm text-emerald-600';
+    const rel = (r.path || '').replace(/^reports\//, '');
+    recentReports.unshift({ ...r, at: new Date().toLocaleString() });
+    renderRecentReports();
+    toast(`Compliance report generated: ${rel}`, 'ok', 3500);
+  } catch (err) {
+    status.textContent = `Failed: ${err.message || 'unknown'}`;
+    status.className = 'text-sm text-red-600';
+  }
+});
+
+function renderRecentReports() {
+  const el = document.getElementById('compliance-recent');
+  if (!recentReports.length) return;
+  el.innerHTML = recentReports.map(r => {
+    const href = r.path ? '/' + r.path : null;
+    return `
+    <div class="flex items-center justify-between p-3 border-b border-slate-100 last:border-0">
+      <div>
+        <div class="text-sm ink font-medium">${r.standard.toUpperCase()} · ${r.from} → ${r.to}</div>
+        <div class="text-xs text-slate-500">${r.at} · ${escapeHtml(r.path || '')}</div>
+      </div>
+      ${href ? `<a href="${href}" target="_blank" class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">Open ↗</a>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ─── Bootstrap ──────────────────────────────────────────────────── */
+function boot() {
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('console').classList.remove('hidden');
+  renderNav();
+  goto('overview');
+  loadStateSnapshot();
+  refreshKpis();
+  refreshDistributions();
+  loadFleet();
+  connectSSE();
+  state.kpisTimer = setInterval(refreshKpis, 5000);
+  state.distTimer = setInterval(refreshDistributions, 30000);
+  state.eventsTimer = setInterval(() => {
+    if (state.activeTab === 'events' && !state.eventsPaused) loadEvents();
+  }, 5000);
+  // Default compliance date range: last 7 days
+  const now = new Date();
+  const weekAgo = new Date(now - 7 * 24 * 3600 * 1000);
+  document.querySelector('[name=from]').value = weekAgo.toISOString().slice(0,10);
+  document.querySelector('[name=to]').value = now.toISOString().slice(0,10);
+}
+
+document.getElementById('login-form').addEventListener('submit', doLogin);
+document.getElementById('logout-btn').addEventListener('click', doLogout);
+checkAuth();
+</script>
+</body>
+</html>

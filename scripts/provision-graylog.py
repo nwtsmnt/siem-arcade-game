@@ -9,7 +9,7 @@ Idempotent: re-running skips items that already exist.
 
 Usage:
   python3 scripts/provision-graylog.py [--url http://localhost:9000] \\
-                                        [--user admin] [--password admin]
+                                        [--user socadmin] [--password <REDACTED-PASSWORD>]
 """
 import argparse
 import base64
@@ -163,31 +163,49 @@ def ensure_event_definition(g, title, description, filter_query, group_by, thres
     return eid
 
 
-def ensure_gelf_input(g, title, port, node_id):
+GELF_HTTP_TYPE = 'org.graylog2.inputs.gelf.http.GELFHttpInput'
+GELF_TCP_TYPE = 'org.graylog2.inputs.gelf.tcp.GELFTCPInput'
+
+
+def ensure_input(g, title, input_type, port, node_id):
     _, data = g.get('/api/system/inputs')
     for inp in data.get('inputs', []):
         if inp.get('title') == title:
             print(f'  [skip] input "{title}" already exists ({inp["id"]})')
             return inp['id']
-    payload = {
-        'title': title,
-        'type': 'org.graylog2.inputs.gelf.http.GELFHttpInput',
-        'configuration': {
+
+    if input_type == GELF_HTTP_TYPE:
+        config = {
             'bind_address': '127.0.0.1',
             'port': port,
             'decompress_size_limit': 8388608,
             'idle_writer_timeout': 60,
             'max_chunk_size': 65536,
-            'number_worker_threads': 2,
+            'number_worker_threads': 8,
             'tcp_keepalive': False,
             'tls_enable': False,
             'enable_cors': True,
             'recv_buffer_size': 1048576,
             'override_source': None,
-        },
-        'global': False,
-        'node': node_id,
-    }
+        }
+    elif input_type == GELF_TCP_TYPE:
+        config = {
+            'bind_address': '127.0.0.1',
+            'port': port,
+            'recv_buffer_size': 1048576,
+            'number_worker_threads': 8,
+            'tls_enable': False,
+            'tcp_keepalive': True,
+            'use_null_delimiter': True,
+            'max_message_size': 2097152,
+            'override_source': None,
+            'decompress_size_limit': 8388608,
+        }
+    else:
+        raise ValueError(f'unknown input type: {input_type}')
+
+    payload = {'title': title, 'type': input_type, 'configuration': config,
+               'global': False, 'node': node_id}
     code, res = g.post('/api/system/inputs', payload)
     if code >= 300:
         print(f'  [ERROR] input "{title}": HTTP {code}: {res}')
@@ -197,15 +215,102 @@ def ensure_gelf_input(g, title, port, node_id):
 
 
 def provision_inputs(g):
-    print('→ GELF HTTP inputs')
+    print('→ GELF inputs (HTTP for normal traffic, TCP for high-volume load)')
     _, cluster = g.get('/api/cluster')
     nodes = list(cluster.items())
     # Sort: leader first, then by node_id for stable ordering
     nodes.sort(key=lambda kv: (not kv[1].get('is_leader'), kv[0]))
     for i, (node_id, info) in enumerate(nodes):
-        port = 12211 + i
+        http_port = 12211 + i
+        tcp_port = 12221 + i
         label = 'graylog1' if info.get('is_leader') else f'graylog{i+1}'
-        ensure_gelf_input(g, f'GELF HTTP ({label})', port, node_id)
+        ensure_input(g, f'GELF HTTP ({label})', GELF_HTTP_TYPE, http_port, node_id)
+        ensure_input(g, f'GELF TCP ({label})', GELF_TCP_TYPE, tcp_port, node_id)
+
+
+def ensure_http_notification(g, title, url, secret=None):
+    """Create (or find existing) Graylog HTTP Notification that POSTs every
+    firing event to the given URL. Returns the notification id.
+    """
+    _, data = g.get('/api/events/notifications?per_page=500')
+    for n in data.get('notifications', []):
+        if n.get('title') == title:
+            print(f'  [skip] notification "{title}" already exists ({n["id"]})')
+            return n['id']
+    # Graylog's encrypted config field wants the raw value on create,
+    # { keep_value: true } on update. We pass the plain string.
+    api_secret = secret or ''
+    payload = {
+        'title': title,
+        'description': 'SOC Console ingest — pushes alerts into the analyst UI in real time.',
+        'config': {
+            'type': 'http-notification-v2',
+            'url': url,
+            'basic_auth': None,
+            'api_key_as_header': bool(secret),
+            'api_key': 'X-SOC-Secret' if secret else '',
+            'api_secret': api_secret,
+            'method': 'POST',
+            'time_zone': 'UTC',
+            'content_type': 'JSON',
+            'headers': '',
+            'skip_tls_verification': True,
+        },
+    }
+    code, res = g.post('/api/events/notifications', payload)
+    if code >= 300:
+        print(f'  [ERROR] notification "{title}": HTTP {code}: {res}')
+        return None
+    print(f'  [ok]  notification "{title}" -> {res.get("id")}')
+    return res.get('id')
+
+
+def attach_notification_to_event_def(g, event_def_id, notification_id):
+    _, d = g.get(f'/api/events/definitions/{event_def_id}')
+    existing = [n.get('notification_id') if isinstance(n, dict) else n
+                for n in d.get('notifications', [])]
+    if notification_id in existing:
+        return True
+    d['notifications'] = (d.get('notifications') or []) + [{'notification_id': notification_id}]
+    # Endpoint expects a put_schedule=true query param to rebuild the scheduler
+    code, res = g.put(f'/api/events/definitions/{event_def_id}?schedule=true', d)
+    if code >= 300:
+        print(f'    [warn] attach to {event_def_id}: HTTP {code}: {str(res)[:120]}')
+        return False
+    return True
+
+
+def whitelist_url(g, title, value):
+    """Add a URL to Graylog's outbound HTTP whitelist. Graylog blocks notification
+    delivery to any URL not on this list.
+    """
+    _, current = g.get('/api/system/urlwhitelist')
+    entries = current.get('entries', [])
+    if any(e.get('value') == value for e in entries):
+        print(f'  [skip] whitelist for {value} already present')
+        return
+    entries.append({'id': title.lower().replace(' ', '-'), 'title': title,
+                    'value': value, 'type': 'literal'})
+    code, _ = g.put('/api/system/urlwhitelist',
+                    {'entries': entries, 'disabled': current.get('disabled', False)})
+    if code >= 300:
+        print(f'  [warn] could not update whitelist: HTTP {code}')
+    else:
+        print(f'  [ok]   whitelisted {value}')
+
+
+def provision_notifications(g, soc_url='http://127.0.0.1:8090/api/soc/ingest-event',
+                            secret=None):
+    print('→ SOC notification + attachment to event defs')
+    whitelist_url(g, 'SOC Console ingest', soc_url)
+    nid = ensure_http_notification(g, 'SOC Console ingest', soc_url, secret=secret)
+    if not nid:
+        return
+    _, defs = g.get('/api/events/definitions?per_page=500')
+    for d in defs.get('event_definitions', []):
+        if d['title'] in ('Brute-force login', 'DoS flood', 'DDoS flood', 'Targeted account attack'):
+            ok = attach_notification_to_event_def(g, d['id'], nid)
+            print(f'  [{"ok" if ok else "warn"}]  attached to "{d["title"]}"')
 
 
 def provision_streams(g):
@@ -229,11 +334,13 @@ def provision_streams(g):
 def provision_event_definitions(g):
     print('→ Event definitions (correlation rules)')
 
+    # All rule queries exclude synthetic load-test traffic so capacity tests
+    # don't trigger incident alerts. Load-test events carry labels.load_test=1.
     ensure_event_definition(
         g,
         title='Brute-force login',
         description='5+ auth failures from the same source IP within 60 seconds',
-        filter_query='event_action:auth_failure',
+        filter_query='event_action:auth_failure AND NOT labels_load_test:1',
         group_by=['source_ip'],
         threshold=5,
         window_s=60,
@@ -242,20 +349,30 @@ def provision_event_definitions(g):
     ensure_event_definition(
         g,
         title='DoS flood',
-        description='100+ events from the same source IP within 10 seconds',
-        filter_query='*',
+        description='30+ events from the same source IP within 10 seconds (single-source flood)',
+        filter_query='NOT labels_load_test:1',
         group_by=['source_ip'],
-        threshold=100,
+        threshold=30,
         window_s=10,
     )
 
     ensure_event_definition(
         g,
-        title='Failed-login anomaly',
-        description='20+ failed logins across all users in 5 minutes (possible distributed brute-force)',
-        filter_query='event_action:auth_failure',
+        title='DDoS flood',
+        description='300+ events in a 30-second window regardless of source (distributed flood)',
+        filter_query='NOT labels_load_test:1',
         group_by=[],
-        threshold=20,
+        threshold=300,
+        window_s=30,
+    )
+
+    ensure_event_definition(
+        g,
+        title='Targeted account attack',
+        description='10+ failed logins against the same username across any source IPs within 5 minutes',
+        filter_query='event_action:auth_failure AND NOT labels_load_test:1',
+        group_by=['user_name'],
+        threshold=10,
         window_s=300,
     )
 
@@ -263,8 +380,12 @@ def provision_event_definitions(g):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', default='http://localhost:9000')
-    parser.add_argument('--user', default='admin')
-    parser.add_argument('--password', default='admin')
+    parser.add_argument('--user', default='socadmin')
+    parser.add_argument('--password', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--soc-url', default='http://127.0.0.1:8090/api/soc/ingest-event',
+                        help='SOC Console endpoint for Graylog HTTP notifications')
+    parser.add_argument('--soc-secret', default=None,
+                        help='Shared secret sent as X-SOC-Secret header (optional)')
     args = parser.parse_args()
 
     g = GraylogClient(args.url, args.user, args.password)
@@ -280,6 +401,8 @@ def main():
     provision_streams(g)
     print()
     provision_event_definitions(g)
+    print()
+    provision_notifications(g, soc_url=args.soc_url, secret=args.soc_secret)
     print('\nDone.')
 
 
