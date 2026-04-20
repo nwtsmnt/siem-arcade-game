@@ -3,7 +3,7 @@ import { initGame } from './engine.js';
 import { setAuthUser } from './log-engine.js';
 
 // TESTING: skip auth, go straight to game
-const SKIP_AUTH = true;
+const SKIP_AUTH = false;
 
 window.addEventListener('DOMContentLoaded', () => {
   const loginScreen = document.getElementById('login-screen');
@@ -60,6 +60,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
       if (data.status === 'success' || data.status === 'created') {
         showSuccess(data.message);
+
+        // Admin redirect
+        if (data.isAdmin) {
+          showSuccess('Admin access granted. Redirecting to control panel...');
+          setTimeout(() => { window.location.href = '/admin.html'; }, 800);
+          return;
+        }
 
         // Pass auth info to log engine
         setAuthUser(data.username, data.ip, data.login_count);

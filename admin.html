@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SIEM Admin — Attack Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050507;
+      color: #39ff14;
+      font-family: 'VT323', monospace;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .header {
+      text-align: center;
+      border-bottom: 1px solid #334433;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .header h1 { font-size: 28px; color: #ff3333; text-shadow: 0 0 10px rgba(255,51,51,0.5); }
+    .header p { font-size: 16px; color: #556655; margin-top: 4px; }
+    .stats {
+      display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .stat {
+      flex: 1; min-width: 100px;
+      background: #0a0a12; border: 1px solid #334433;
+      padding: 12px; text-align: center;
+    }
+    .stat-value { font-size: 28px; color: #ffcc00; }
+    .stat-label { font-size: 14px; color: #556655; }
+    .section { margin-bottom: 20px; }
+    .section-title {
+      font-size: 20px; color: #00ffff;
+      text-shadow: 0 0 8px rgba(0,255,255,0.3);
+      border-bottom: 1px solid #1a2a2a;
+      padding-bottom: 6px; margin-bottom: 12px;
+    }
+    .attack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .attack-card {
+      background: #0a0a12; border: 1px solid #334433;
+      padding: 14px; transition: border-color 0.2s;
+    }
+    .attack-card:hover { border-color: #556655; }
+    .attack-name { font-size: 18px; color: #ffcc00; margin-bottom: 4px; }
+    .attack-desc { font-size: 14px; color: #556655; margin-bottom: 10px; line-height: 1.4; }
+    .attack-severity {
+      display: inline-block; padding: 2px 8px; font-size: 13px; margin-bottom: 10px;
+    }
+    .sev-critical { background: rgba(255,51,51,0.2); color: #ff3333; border: 1px solid #ff3333; }
+    .sev-high { background: rgba(255,153,0,0.2); color: #ff9900; border: 1px solid #ff9900; }
+    .sev-medium { background: rgba(255,204,0,0.2); color: #ffcc00; border: 1px solid #ffcc00; }
+    .sev-low { background: rgba(57,255,20,0.2); color: #39ff14; border: 1px solid #39ff14; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .controls select, .controls input {
+      background: #0d0d1a; color: #39ff14; border: 1px solid #334433;
+      font-family: 'VT323', monospace; font-size: 15px; padding: 6px 10px;
+      outline: none;
+    }
+    .controls select:focus, .controls input:focus { border-color: #39ff14; }
+    .controls label { font-size: 13px; color: #556655; display: block; margin-bottom: 2px; }
+    .control-group { flex: 1; min-width: 100px; }
+    .btn {
+      font-family: 'VT323', monospace; font-size: 16px;
+      padding: 8px 20px; cursor: pointer; border: 2px solid;
+      transition: all 0.2s; width: 100%;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-attack {
+      background: rgba(255,51,51,0.1); color: #ff3333; border-color: #ff3333;
+    }
+    .btn-attack:hover { background: rgba(255,51,51,0.25); box-shadow: 0 0 10px rgba(255,51,51,0.3); }
+    .btn-normal {
+      background: rgba(57,255,20,0.1); color: #39ff14; border-color: #39ff14;
+    }
+    .btn-normal:hover { background: rgba(57,255,20,0.25); box-shadow: 0 0 10px rgba(57,255,20,0.3); }
+    .btn-stop {
+      background: rgba(255,204,0,0.1); color: #ffcc00; border-color: #ffcc00;
+    }
+    .btn-stop:hover { background: rgba(255,204,0,0.25); }
+    .btn-disabled { opacity: 0.4; pointer-events: none; }
+    .active-sims {
+      background: #0a0a12; border: 1px solid #334433; padding: 12px;
+      margin-bottom: 20px; max-height: 200px; overflow-y: auto;
+    }
+    .sim-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; border-bottom: 1px solid #1a1a2a; font-size: 15px;
+    }
+    .sim-item:last-child { border: none; }
+    .sim-active { color: #ff3333; }
+    .sim-done { color: #556655; }
+    .log-feed {
+      background: #0a0a12; border: 1px solid #334433; padding: 10px;
+      height: 200px; overflow-y: auto; font-size: 13px; line-height: 1.5;
+    }
+    .log-line { color: #556655; }
+    .log-line.warn { color: #ffcc00; }
+    .log-line.error { color: #ff3333; }
+    .back-link {
+      display: inline-block; margin-top: 16px; color: #00ffff;
+      font-size: 16px; text-decoration: none;
+    }
+    .back-link:hover { text-shadow: 0 0 8px rgba(0,255,255,0.5); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>// ATTACK SIMULATOR //</h1>
+    <p>SIEM Training — Log Generation Control Panel</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value" id="totalLogs">0</div>
+      <div class="stat-label">TOTAL LOGS</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="activeSims">0</div>
+      <div class="stat-label">ACTIVE SIMS</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="logsPerSec">0</div>
+      <div class="stat-label">LOGS/SEC</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">ACTIVE SIMULATIONS</div>
+    <div class="active-sims" id="activeSims-list">
+      <div style="color:#556655; text-align:center; padding:20px;">No active simulations</div>
+    </div>
+    <button class="btn btn-stop" onclick="stopAll()">STOP ALL SIMULATIONS</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">LAUNCH ATTACK SIMULATION</div>
+    <div class="attack-grid">
+
+      <div class="attack-card">
+        <div class="attack-name">Normal Activity</div>
+        <div class="attack-desc">Generate realistic player sessions — logins, gameplay actions, logouts</div>
+        <span class="attack-severity sev-low">LOW</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="normal-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="normal-duration"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="0">Continuous</option></select></div>
+        </div>
+        <button class="btn btn-normal" onclick="launch('normal_activity','normal')">GENERATE</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Brute Force Attack</div>
+        <div class="attack-desc">Password spray against common usernames from configurable source IPs</div>
+        <span class="attack-severity sev-high">HIGH</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="brute-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="brute-duration"><option value="60" selected>1 min</option><option value="300">5 min</option><option value="0">Continuous</option></select></div>
+          <div class="control-group"><label>Source IPs</label><select id="brute-source"><option value="single">Single IP</option><option value="distributed">Distributed</option><option value="tor">Tor Exits</option></select></div>
+          <div class="control-group"><label>Targets</label><select id="brute-target"><option value="admin">Admin Only</option><option value="common" selected>Common Users</option><option value="random">Random</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('brute_force','brute')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Credential Stuffing</div>
+        <div class="attack-desc">Single IP tries many username/password combinations from leaked databases</div>
+        <span class="attack-severity sev-high">HIGH</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="cred-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="cred-duration"><option value="60" selected>1 min</option><option value="300">5 min</option><option value="0">Continuous</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('credential_stuffing','cred')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">DDoS Simulation</div>
+        <div class="attack-desc">Flood of connection attempts from thousands of distributed IPs</div>
+        <span class="attack-severity sev-critical">CRITICAL</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="ddos-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="ddos-duration"><option value="30">30 sec</option><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('ddos','ddos')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Privilege Escalation</div>
+        <div class="attack-desc">Legitimate user gains elevated access and performs admin-level actions</div>
+        <span class="attack-severity sev-critical">CRITICAL</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="privesc-intensity"><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="privesc-duration"><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('privilege_escalation','privesc')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Data Exfiltration</div>
+        <div class="attack-desc">Spike in terminal access with large data downloads — data theft pattern</div>
+        <span class="attack-severity sev-critical">CRITICAL</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="exfil-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="exfil-duration"><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('data_exfiltration','exfil')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Insider Threat</div>
+        <div class="attack-desc">Legitimate user with unusual activity patterns — off-hours access, restricted terminals</div>
+        <span class="attack-severity sev-medium">MEDIUM</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="insider-intensity"><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="insider-duration"><option value="60">1 min</option><option value="300" selected>5 min</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('insider_threat','insider')">LAUNCH</button>
+      </div>
+
+      <div class="attack-card">
+        <div class="attack-name">Account Takeover</div>
+        <div class="attack-desc">Brute force succeeds, then rapid suspicious actions from the compromised account</div>
+        <span class="attack-severity sev-critical">CRITICAL</span>
+        <div class="controls">
+          <div class="control-group"><label>Intensity</label><select id="takeover-intensity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+          <div class="control-group"><label>Duration</label><select id="takeover-duration"><option value="60" selected>1 min</option><option value="300">5 min</option></select></div>
+          <div class="control-group"><label>Source IPs</label><select id="takeover-source"><option value="single" selected>Single IP</option><option value="tor">Tor Exits</option></select></div>
+          <div class="control-group"><label>Targets</label><select id="takeover-target"><option value="admin" selected>Admin</option><option value="common">Common Users</option></select></div>
+        </div>
+        <button class="btn btn-attack" onclick="launch('account_takeover','takeover')">LAUNCH</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">LIVE LOG FEED</div>
+    <div class="log-feed" id="logFeed"></div>
+  </div>
+
+  <a href="/" class="back-link">[EXIT TO GAME]</a>
+
+  <script>
+    let lastTotal = 0;
+    let lastTime = Date.now();
+
+    async function launch(type, prefix) {
+      const params = {
+        type,
+        intensity: document.getElementById(`${prefix}-intensity`)?.value || 'medium',
+        duration: parseInt(document.getElementById(`${prefix}-duration`)?.value || '60'),
+      };
+      if (document.getElementById(`${prefix}-source`)) params.sourceMode = document.getElementById(`${prefix}-source`).value;
+      if (document.getElementById(`${prefix}-target`)) params.targetMode = document.getElementById(`${prefix}-target`).value;
+      if (params.duration === 0) params.duration = 86400; // "continuous" = 24h
+
+      const res = await fetch('/api/simulate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(params) });
+      const data = await res.json();
+      console.log('Launched:', data);
+      updateStatus();
+    }
+
+    async function stopAll() {
+      await fetch('/api/simulate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({type: 'stop_all'}) });
+      updateStatus();
+    }
+
+    async function updateStatus() {
+      try {
+        const res = await fetch('/api/simulate/status');
+        const data = await res.json();
+
+        document.getElementById('totalLogs').textContent = data.totalLogs.toLocaleString();
+
+        const now = Date.now();
+        const elapsed = (now - lastTime) / 1000;
+        if (elapsed > 0 && lastTotal > 0) {
+          const rate = Math.round((data.totalLogs - lastTotal) / elapsed);
+          document.getElementById('logsPerSec').textContent = rate >= 0 ? rate : 0;
+        }
+        lastTotal = data.totalLogs;
+        lastTime = now;
+
+        const sims = data.simulations;
+        const activeCount = Object.values(sims).filter(s => s.active).length;
+        document.getElementById('activeSims').textContent = activeCount;
+
+        const list = document.getElementById('activeSims-list');
+        const entries = Object.entries(sims);
+        if (entries.length === 0) {
+          list.innerHTML = '<div style="color:#556655;text-align:center;padding:20px;">No active simulations</div>';
+        } else {
+          list.innerHTML = entries.map(([id, s]) =>
+            `<div class="sim-item ${s.active ? 'sim-active' : 'sim-done'}">
+              <span>${s.type.replace(/_/g, ' ').toUpperCase()}</span>
+              <span>${s.generated} logs ${s.active ? '(running)' : '(done)'}</span>
+            </div>`
+          ).join('');
+        }
+      } catch(e) {}
+    }
+
+    async function updateLogFeed() {
+      try {
+        const res = await fetch('/api/logs');
+        const data = await res.json();
+        const feed = document.getElementById('logFeed');
+        feed.innerHTML = data.logs.slice(-30).reverse().map(l => {
+          const lvl = l.log?.level || 'info';
+          const action = l.event?.action || '?';
+          const msg = l.message || '';
+          const ts = (l['@timestamp'] || '').slice(11, 19);
+          return `<div class="log-line ${lvl === 'warn' ? 'warn' : ''}">[${ts}] ${action.padEnd(25)} ${msg.slice(0, 60)}</div>`;
+        }).join('');
+        feed.scrollTop = 0;
+      } catch(e) {}
+    }
+
+    setInterval(updateStatus, 2000);
+    setInterval(updateLogFeed, 3000);
+    updateStatus();
+    updateLogFeed();
+  </script>
+</body>
+</html>
