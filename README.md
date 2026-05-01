@@ -11,6 +11,14 @@ and a 10 000 events / second monitoring requirement.
 
 ![SOC Console — 10 976 eps sustained, 1.06 M events / hour, 1 900 simulated players](assets/soc-dashboard.png)
 
+### SOC Console — normal operations
+
+![SOC Console overview — events / sec, blocked IPs, alert queue, GeoIP-enriched country donut](assets/soc-overview.png)
+
+### Daily SOC 2 / GDPR compliance report
+
+![Auto-generated compliance PDF — CC6 / A1 / PI1 / C1 controls with the actual SIEM audit trail](assets/compliance-report.png)
+
 ## What's running
 
 | URL | Component | Login |
