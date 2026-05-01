@@ -19,16 +19,9 @@ and a 10 000 events / second monitoring requirement.
 
 ![Auto-generated compliance PDF — CC6 / A1 / PI1 / C1 controls with the actual SIEM audit trail](assets/compliance-report.png)
 
-## What's running
+### The game itself
 
-| URL | Component | Login |
-|---|---|---|
-| **[siem-game.co.uk](https://siem-game.co.uk)** | Arcade game (the production system being monitored) | — |
-| **[soc.siem-game.co.uk](https://soc.siem-game.co.uk)** | Custom SOC Console — KPIs, live alert feed (SSE), drill-down filters, block-IP / disable-user actions | `socadmin / <REDACTED-PASSWORD>` |
-| **[graylog.siem-game.co.uk](https://graylog.siem-game.co.uk)** | Graylog SIEM — raw search, 5 critical dashboards, 4 correlation rules | `socadmin / <REDACTED-PASSWORD>` |
-
-All services run on a single VPS (IONOS), nginx reverse-proxy, real
-Let's Encrypt certs, IONOS firewall layered with VM iptables.
+![Arcade game — retro DOS aesthetic, real authentication, ECS event emission on every player action](assets/screenshot.png)
 
 ## Architecture
 
