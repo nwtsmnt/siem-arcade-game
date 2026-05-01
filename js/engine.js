@@ -89,7 +89,11 @@ function startGame() {
   document.getElementById('controls-legend').classList.remove('hidden');
 }
 
+let __gameKicked = false;
+window.addEventListener('siem:kicked', () => { __gameKicked = true; });
+
 function gameLoop(timestamp) {
+  if (__gameKicked) return;  // SOC killed the session — stop the loop
   requestAnimationFrame(gameLoop);
   frameCount++;
 

@@ -346,11 +346,14 @@ def provision_event_definitions(g):
         window_s=60,
     )
 
+    # DoS / DDoS scope: ONLY auth-path traffic. Gameplay is excluded because
+    # an active player easily emits 30 events in 10 s (moves, shots, kills),
+    # which would otherwise trip these rules as false positives.
     ensure_event_definition(
         g,
         title='DoS flood',
-        description='30+ events from the same source IP within 10 seconds (single-source flood)',
-        filter_query='NOT labels_load_test:1',
+        description='30+ auth-path events from the same source IP within 10 seconds (single-source flood)',
+        filter_query='event_category:authentication AND NOT labels_load_test:1',
         group_by=['source_ip'],
         threshold=30,
         window_s=10,
@@ -359,8 +362,8 @@ def provision_event_definitions(g):
     ensure_event_definition(
         g,
         title='DDoS flood',
-        description='300+ events in a 30-second window regardless of source (distributed flood)',
-        filter_query='NOT labels_load_test:1',
+        description='300+ auth-path events in a 30-second window regardless of source (distributed flood)',
+        filter_query='event_category:authentication AND NOT labels_load_test:1',
         group_by=[],
         threshold=300,
         window_s=30,

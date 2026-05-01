@@ -6,3 +6,9 @@ __pycache__/
 .DS_Store
 .env
 docker/.env
+
+# excluded from public repo — kept locally
+docs/
+music/
+*.save
+*.MOV

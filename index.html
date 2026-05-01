@@ -6,7 +6,7 @@
   <title>SYSTEM BREACH // Arcade Protocol</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/game.css?v=gamepill">
 </head>
 <body>
   <!-- Login Screen -->
@@ -27,7 +27,43 @@
         <div id="login-success" class="hidden"></div>
         <button id="login-btn">AUTHENTICATE</button>
         <div id="login-hint">New username? Account will be created automatically.</div>
+        <button id="credits-btn" type="button">&gt; CREDITS</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ─── Credits modal ─────────────────────────────────────── -->
+  <div id="credits-overlay" class="hidden">
+    <div id="credits-box">
+      <div id="credits-title">&gt; TEAM_ROSTER.DAT</div>
+      <div id="credits-subtitle">// CATNIP GAMES — SIEM PROJECT //</div>
+      <div class="credit-row">
+        <div class="credit-name">RAHMON</div>
+        <div class="credit-role">Infrastructure Engineer / DevOps Security</div>
+        <div class="credit-task">VPS, Docker HA stack, DNS, TLS, host hardening</div>
+      </div>
+      <div class="credit-row">
+        <div class="credit-name">TOM</div>
+        <div class="credit-role">Application Developer / Application Security</div>
+        <div class="credit-task">Arcade game, auth flow, admin panel, secure sessions</div>
+      </div>
+      <div class="credit-row">
+        <div class="credit-name">MARUF</div>
+        <div class="credit-role">Penetration Tester / Red Team</div>
+        <div class="credit-task">Attack simulations, MITRE ATT&amp;CK coverage</div>
+      </div>
+      <div class="credit-row">
+        <div class="credit-name">CHESTA</div>
+        <div class="credit-role">SOC Analyst / Incident Responder</div>
+        <div class="credit-task">SOC Console, response actions, compliance reports</div>
+      </div>
+      <div class="credit-row">
+        <div class="credit-name">ROMAN</div>
+        <div class="credit-role">Project Manager / Detection Engineer</div>
+        <div class="credit-task">Correlation rules, audit, academic write-up</div>
+      </div>
+      <div id="credits-footer">siem-game.co.uk · 2026</div>
+      <button id="credits-close" type="button">&gt; CLOSE</button>
     </div>
   </div>
 
@@ -85,6 +121,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=gamepill"></script>
 </body>
 </html>

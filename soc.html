@@ -119,13 +119,13 @@
             <div class="text-[11px] text-indigo-600 mt-1">Open last 1h →</div>
           </button>
           <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-emerald-400 hover:shadow-sm transition cursor-pointer"
-                  data-go="events" data-q="event_outcome:success AND event_action:login" data-range="3600" title="Open successful logins — last 1h">
+                  data-go="events" data-q="event_outcome:success AND NOT user_name:socadmin AND NOT event_provider:soc-console AND NOT event_action:user_logout AND NOT event_action:session_end AND NOT labels_load_test:1" data-range="300" title="Recent non-logout player activity — last 5 min">
             <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Active players</div>
             <div class="text-2xl font-semibold text-emerald-600 mt-1" id="kpi-active">—</div>
-            <div class="text-[11px] text-emerald-600 mt-1">See successful logins →</div>
+            <div class="text-[11px] text-emerald-600 mt-1">See activity →</div>
           </button>
           <button type="button" class="kpi-tile bg-white rounded-lg border border-slate-200 p-4 text-left hover:border-amber-400 hover:shadow-sm transition cursor-pointer"
-                  data-go="events" data-q="event_action:session_end OR event_action:user_logout" data-range="3600" title="Open logout events — last 1h">
+                  data-go="events" data-q="event_action:session_end OR event_action:user_logout" data-range="3600" title="Logout events — last 1h">
             <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Idle players</div>
             <div class="text-2xl font-semibold text-amber-600 mt-1" id="kpi-idle">—</div>
             <div class="text-[11px] text-amber-600 mt-1">See disconnects →</div>
@@ -212,13 +212,14 @@
               <thead class="bg-slate-50 text-slate-600 text-xs uppercase tracking-wide">
                 <tr>
                   <th class="text-left px-4 py-2.5 font-medium">Status</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Event</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Message</th>
                   <th class="text-left px-4 py-2.5 font-medium">Timestamp</th>
                   <th class="text-left px-4 py-2.5 font-medium">Player</th>
                   <th class="text-left px-4 py-2.5 font-medium">Country</th>
                   <th class="text-left px-4 py-2.5 font-medium">IP</th>
-                  <th class="text-left px-4 py-2.5 font-medium">Auth</th>
+                  <th class="text-left px-4 py-2.5 font-medium">Actions</th>
                   <th class="text-left px-4 py-2.5 font-medium">Rank</th>
-                  <th class="text-left px-4 py-2.5 font-medium">Session</th>
                 </tr>
               </thead>
               <tbody id="events-tbody" class="divide-y divide-slate-100"></tbody>
@@ -420,6 +421,16 @@ function toast(msg, kind='ok', ms=2500) {
      : 'border-emerald-300 text-emerald-700');
   clearTimeout(toast._t);
   toast._t = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+// ISO UTC timestamp → local time "YYYY-MM-DD HH:MM:SS" with browser TZ
+function fmtLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ` +
+         `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function escapeHtml(s) {
@@ -632,7 +643,7 @@ function alertRow(a) {
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
         <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${sev.pill}">${sevLabel}</span>
-        <span class="text-xs text-slate-500">${(a.timestamp||'').slice(0,19).replace('T',' ')}</span>
+        <span class="text-xs text-slate-500" title="${escapeHtml(a.timestamp||'')}">${fmtLocal(a.timestamp)}</span>
         <span class="text-xs text-slate-400">· ${escapeHtml(a.rule_title||'alert')}</span>
       </div>
       <div class="text-sm ink mt-1 font-medium">${escapeHtml(a.message || a.rule_title || 'alert')}</div>
@@ -690,19 +701,32 @@ document.addEventListener('click', async e => {
   const action = btn.dataset.action;
   try {
     if (action === 'block_ip') {
+      if (!confirm(`Block ${btn.dataset.ip}? Every request from this IP will get HTTP 403 + a kernel-level DROP rule.`)) return;
       const alertId = btn.closest('[data-id]')?.dataset.id;
-      const r = await api('/api/soc/block_ip', 'POST', {ip: btn.dataset.ip, reason: 'SOC queue', alert_id: alertId});
+      const reason = btn.closest('[data-id]') ? 'SOC queue' : 'manual (live events)';
+      const r = await api('/api/soc/block_ip', 'POST', {ip: btn.dataset.ip, reason, alert_id: alertId});
       toast(`Blocked ${btn.dataset.ip} (${r.kernel ? 'kernel+app' : 'app only'})`);
+      await loadStateSnapshot();
+      if (state.activeTab === 'events') loadEvents();
     } else if (action === 'unblock_ip') {
+      if (!confirm(`Unblock ${btn.dataset.ip}? This IP will be able to reach the game again.`)) return;
       await api('/api/soc/unblock_ip', 'POST', {ip: btn.dataset.ip});
       toast(`Unblocked ${btn.dataset.ip}`);
+      await loadStateSnapshot();
+      if (state.activeTab === 'events') loadEvents();
+      if (state.activeTab === 'threatmap') loadThreatmap();
     } else if (action === 'disable_user') {
+      if (!confirm(`Disable user ${btn.dataset.user}? They will no longer be able to log in.`)) return;
       const alertId = btn.closest('[data-id]')?.dataset.id;
       await api('/api/soc/disable_user', 'POST', {username: btn.dataset.user, reason: 'SOC queue', alert_id: alertId});
       toast(`Disabled ${btn.dataset.user}`);
+      await loadStateSnapshot();
+      if (state.activeTab === 'events') loadEvents();
     } else if (action === 'enable_user') {
       await api('/api/soc/enable_user', 'POST', {username: btn.dataset.user});
       toast(`Enabled ${btn.dataset.user}`);
+      await loadStateSnapshot();
+      if (state.activeTab === 'events') loadEvents();
     } else if (action === 'force_logout_ip') {
       await api('/api/soc/force_logout_ip', 'POST', {ip: btn.dataset.ip});
       toast(`Force-logout sent for ${btn.dataset.ip}`);
@@ -733,6 +757,9 @@ async function loadEvents() {
     const empty = document.getElementById('events-empty');
     if (!r.events.length) { tbody.innerHTML = ''; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
+    // Newest first (Graylog's CSV endpoint isn't reliable about sort, so
+    // we sort client-side too).
+    r.events.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
     // Click any value to filter the stream down to it — same idea as
     // Graylog's "add to search" affordance on message fields.
     const drill = (field, value, label) => {
@@ -743,7 +770,14 @@ async function loadEvents() {
     tbody.innerHTML = r.events.map(evt => {
       const outcome = evt.event_outcome;
       const attempts = parseInt(evt.labels_auth_attempts || '0', 10);
-      const statusPill = outcome === 'failure'
+      // Category determines the semantic meaning of "outcome".
+      // Gameplay rows never show FAIL — a player death is game state, not a
+      // security failure. FAIL is reserved for authentication outcomes.
+      const evtCat = (evt.event_category || '').toLowerCase();
+      const isGameplayEvt = /gameplay|game|session|process/.test(evtCat);
+      const statusPill = isGameplayEvt
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-sky-100 text-sky-700">GAME</span>`
+          : outcome === 'failure'
           ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700">FAIL</span>`
           : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100 text-emerald-700">OK</span>`;
       const authCell = attempts >= 20
@@ -756,15 +790,62 @@ async function loadEvents() {
       const countryCell = country === '—'
           ? '—'
           : `${drill('source_geo_country_name', country, country)} ${code ? `<span class="text-slate-400 text-xs">(${code})</span>`:''}`;
-      return `<tr class="${outcome === 'failure' ? 'bg-red-50' : ''} hover:bg-slate-50 evt-row" data-raw='${escapeHtml(JSON.stringify(evt))}' style="cursor:pointer">
+      // Row actions — Block / Disable / Logout. Always available on rows
+      // with a source_ip + user_name. Skips local/empty IPs. `no-drill`
+      // stops the outer row-click from expanding the details panel.
+      const ip = (evt.source_ip || '').trim();
+      const un = (evt.user_name || '').trim();
+      const isOperator = un === 'socadmin';
+      const hasIp = ip && ip !== '127.0.0.1' && ip !== '—';
+      // Is this IP / user already in an enforcement state? Swap button labels.
+      const ipBlocked = !!state.blocklist[ip];
+      const userDisabled = !!state.disabledUsers[un];
+      const blockBtn = ipBlocked
+        ? `<button class="text-[11px] px-1.5 py-0.5 rounded border border-green-400 text-green-700 hover:bg-green-50"
+                   data-action="unblock_ip" data-ip="${escapeHtml(ip)}" title="Remove this IP from the blocklist">Unblock</button>`
+        : `<button class="text-[11px] px-1.5 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50"
+                   data-action="block_ip" data-ip="${escapeHtml(ip)}" title="Block this IP (app + kernel iptables)">Block IP</button>`;
+      const userBtn = (un && un !== 'anonymous') ? (userDisabled
+        ? `<button class="text-[11px] px-1.5 py-0.5 rounded border border-green-400 text-green-700 hover:bg-green-50"
+                   data-action="enable_user" data-user="${escapeHtml(un)}" title="Re-enable this user account">Enable</button>`
+        : `<button class="text-[11px] px-1.5 py-0.5 rounded border border-orange-300 text-orange-700 hover:bg-orange-50"
+                   data-action="disable_user" data-user="${escapeHtml(un)}" title="Disable this user account">Disable</button>`) : '';
+      const actionsCell = (hasIp && !isOperator) ? `
+        <div class="flex gap-1 flex-wrap no-drill">
+          ${blockBtn}
+          ${userBtn}
+          <button class="text-[11px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50"
+                  data-action="force_logout_ip" data-ip="${escapeHtml(ip)}" title="Force-logout all sessions from this IP (60s soft kick)">Logout</button>
+        </div>` : '<span class="text-slate-400 text-xs">—</span>';
+
+      // Event action pill — coloured by broad category so gameplay / auth /
+      // attack events are distinguishable at a glance, and clickable to
+      // filter the stream.
+      const action = (evt.event_action || '').trim();
+      const cat = (evt.event_category || '').toLowerCase();
+      let pillStyle = 'bg-slate-100 text-slate-700';
+      if (outcome === 'failure')                           pillStyle = 'bg-red-100 text-red-700';
+      else if (action === 'user_login')                    pillStyle = 'bg-emerald-100 text-emerald-700';
+      else if (action === 'user_logout' || action === 'session_end') pillStyle = 'bg-slate-100 text-slate-700';
+      else if (cat.includes('gameplay') || /^(player_|enemy_|boss_|game_)/.test(action))
+                                                           pillStyle = 'bg-sky-100 text-sky-700';
+      else if (action.startsWith('soc_'))                  pillStyle = 'bg-purple-100 text-purple-700';
+      const eventPill = action
+        ? `<a href="#" class="drill-filter inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium font-mono ${pillStyle} hover:underline"
+              data-q="event_action:${escapeHtml(action)}" title="Filter to events with action=${escapeHtml(action)}">${escapeHtml(action)}</a>`
+        : '<span class="text-slate-400 text-xs">—</span>';
+      const message = (evt.message || '').trim();
+
+      return `<tr class="${outcome === 'failure' && !isGameplayEvt ? 'bg-red-50' : ''} hover:bg-slate-50 evt-row" data-raw='${escapeHtml(JSON.stringify(evt))}' style="cursor:pointer">
         <td class="px-4 py-2.5 whitespace-nowrap">${statusPill}</td>
-        <td class="px-4 py-2.5 text-xs text-slate-500 font-mono whitespace-nowrap">${(evt.timestamp || '').slice(0,19).replace('T',' ')}</td>
+        <td class="px-4 py-2.5 whitespace-nowrap">${eventPill}</td>
+        <td class="px-4 py-2.5 text-slate-600 text-xs max-w-md truncate" title="${escapeHtml(message)}">${escapeHtml(message) || '<span class="text-slate-400">—</span>'}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-500 font-mono whitespace-nowrap" title="${escapeHtml(evt.timestamp || '')}">${fmtLocal(evt.timestamp)}</td>
         <td class="px-4 py-2.5 text-slate-700 whitespace-nowrap">${drill('user_name', evt.user_name)}</td>
         <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${countryCell}</td>
         <td class="px-4 py-2.5 font-mono text-xs whitespace-nowrap">${drill('source_ip', evt.source_ip)}</td>
-        <td class="px-4 py-2.5 whitespace-nowrap">${authCell}</td>
+        <td class="px-4 py-2.5 whitespace-nowrap">${actionsCell}</td>
         <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${escapeHtml(evt.labels_game_rank || '—')}</td>
-        <td class="px-4 py-2.5 text-slate-400 font-mono text-[11px] whitespace-nowrap">${escapeHtml((evt.session_id || '').slice(0,12))}</td>
       </tr>`;
     }).join('');
   } catch (e) { console.error(e); }
@@ -798,7 +879,8 @@ document.getElementById('events-tbody').addEventListener('click', e => {
     addDrillFilter(a.dataset.q);
     return;
   }
-  // Row click (not on a drill-filter link) → expand to show the raw event JSON.
+  // Row click (not on a drill-filter link or an action button) → expand to show the raw event JSON.
+  if (e.target.closest('[data-action]') || e.target.closest('.no-drill')) return;
   const row = e.target.closest('.evt-row');
   if (!row) return;
   const next = row.nextElementSibling;
@@ -808,7 +890,7 @@ document.getElementById('events-tbody').addEventListener('click', e => {
     const tr = document.createElement('tr');
     tr.className = 'evt-detail bg-slate-50';
     const td = document.createElement('td');
-    td.colSpan = 8;
+    td.colSpan = 9;
     td.className = 'px-4 py-3';
     const fields = Object.entries(raw)
         .filter(([,v]) => v !== null && v !== undefined && v !== '')
@@ -865,6 +947,8 @@ async function loadThreatmap() {
            title="See last 24h of events from ${escapeHtml(ip)}">${escapeHtml(ip)}</a>
         <div class="text-xs text-slate-500">${info.hit_count||0} blocked hits</div>
         <span class="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-700">BLOCKED</span>
+        <button class="text-[11px] px-2 py-0.5 rounded border border-green-400 text-green-700 hover:bg-green-50"
+                data-action="unblock_ip" data-ip="${escapeHtml(ip)}" title="Remove this IP from the blocklist">Unblock</button>
       </div>`).join('') : '<div class="text-sm text-slate-500 p-4">No IPs currently blocked.</div>';
   } catch (e) { console.error(e); }
 }

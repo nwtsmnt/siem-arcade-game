@@ -104,6 +104,7 @@ acked_lock = threading.Lock()
 CONFIG = {
     'port': 8090,
     'graylog_url': 'http://localhost:9000',
+    'graylog_external_url': None,   # public-facing URL used for pivot links only
     'graylog_auth': ('socadmin', '<REDACTED-PASSWORD>'),
     'shared_secret': None,
     'log_server': 'http://localhost:8080',
@@ -410,7 +411,9 @@ class SOCHandler(BaseHTTPRequestHandler):
         hours = int(qs.get('hours', ['1'])[0])
         field = 'source_ip' if entity_type == 'ip' else 'user_name'
         query = urllib.parse.quote(f'{field}:{value}')
-        url = f'{CONFIG["graylog_url"]}/search?q={query}&rangetype=relative&relative={hours * 3600}'
+        # Pivot links open in the user's browser — use the public URL, not localhost.
+        base = CONFIG.get('graylog_external_url') or CONFIG['graylog_url']
+        url = f'{base}/search?q={query}&rangetype=relative&relative={hours * 3600}'
         self._json(200, {'url': url, 'query': f'{field}:{value}'})
 
     # ─── Graylog → SOC ingest ──────────────────────────────────────────────
@@ -567,16 +570,19 @@ class SOCHandler(BaseHTTPRequestHandler):
         ip = (body.get('ip') or '').strip()
         if not ip:
             return self._json(400, {'error': 'ip required'})
-        # Ask log-server to invalidate/record forced logout via its audit channel.
-        # For now we just emit an ECS session_end event for the IP and let the
-        # browser-side game poll auth status (which we can add later).
+        # Kick any active game session from this IP: add a short-TTL block
+        # (60 s). The game client posts telemetry every 1 s; the next POST
+        # gets 403 → redirect to login. TTL auto-expires so the user can
+        # log back in right away.
+        S.block_ip(ip, reason=f'force-logout by {actor}', actor=actor,
+                   kernel=False, ttl_seconds=60)
         entry = {
             '@timestamp': now_iso(),
             'event': {'category': ['authentication'], 'action': 'force_logout',
                       'outcome': 'success', 'provider': 'soc-console'},
             'source': {'ip': ip},
             'user': {'name': 'all-from-ip'},
-            'message': f'Force-logout requested for all sessions from {ip}',
+            'message': f'Force-logout by {actor}: sessions from {ip} kicked (60s block)',
             'log': {'level': 'notice'},
             'ecs': {'version': '8.11'},
             'labels': {'soc_action': 'force_logout', 'target': ip},
@@ -594,8 +600,8 @@ class SOCHandler(BaseHTTPRequestHandler):
             pass
         emit_audit('soc_force_logout_ip', actor, ip)
         broadcast('state_change', {'kind': 'force_logout_ip', 'ip': ip})
-        print(f'  [ACTION] FORCE_LOGOUT_IP {ip} by {actor}')
-        self._json(200, {'status': 'logged_out', 'ip': ip})
+        print(f'  [ACTION] FORCE_LOGOUT_IP {ip} by {actor} (60s TTL)')
+        self._json(200, {'status': 'logged_out', 'ip': ip, 'ttl_seconds': 60})
 
     def _action_ack(self):
         actor = self._require_admin()
@@ -664,12 +670,15 @@ class SOCHandler(BaseHTTPRequestHandler):
 
     # ─── Graylog helpers ───────────────────────────────────────────────────
 
-    def _graylog_search_csv(self, query, range_s, fields, limit=1000):
+    def _graylog_search_csv(self, query, range_s, fields, limit=1000, sort='timestamp:desc'):
         import urllib.request, urllib.error
-        qs = urllib.parse.urlencode({
+        params = {
             'query': query or '*', 'range': range_s, 'limit': limit,
             'fields': ','.join(fields),
-        })
+        }
+        if sort:
+            params['sort'] = sort
+        qs = urllib.parse.urlencode(params)
         user, pw = CONFIG['graylog_auth']
         tok = base64.b64encode(f'{user}:{pw}'.encode()).decode()
         req = urllib.request.Request(
@@ -723,12 +732,13 @@ class SOCHandler(BaseHTTPRequestHandler):
           idle         — last event is not a logout and happened 5-60 min ago
           disconnected — last event IS a session_end / user_logout
         This is the honest "currently playing" definition, not "logged in
-        anywhere in the last 5 min".
+        anywhere in the last 5 min". Excludes SOC operators (socadmin) and
+        any event sourced from the SOC Console itself — they're not players.
         """
         import csv as _c, io as _i
         csv_data = self._graylog_search_csv(
-            'user_name:*', 3600,
-            ['user_name', 'event_action', 'timestamp'], limit=10000,
+            f'user_name:* AND NOT user_name:{ADMIN_USERNAME} AND NOT event_provider:soc-console',
+            3600, ['user_name', 'event_action', 'timestamp'], limit=10000,
         )
         now = datetime.now(timezone.utc)
         latest = {}  # user_name -> (datetime, action)
@@ -830,6 +840,7 @@ class SOCHandler(BaseHTTPRequestHandler):
         q = qs.get('q', [''])[0] or '*'
         range_s = int(qs.get('range', ['3600'])[0])
         fields = ['timestamp', 'message', 'event_action', 'event_outcome',
+                  'event_category', 'event_kind',
                   'user_name', 'source_ip', 'source_geo_country_name',
                   'source_geo_country_iso_code', 'log_level', 'host_name',
                   'labels_game_rank', 'labels_auth_attempts', 'labels_player_status',
@@ -839,6 +850,16 @@ class SOCHandler(BaseHTTPRequestHandler):
         import csv as _csv, io as _io
         reader = _csv.DictReader(_io.StringIO(csv_data))
         for r in reader:
+            # Re-enrich from the live GeoIP cache: events indexed with
+            # "Unknown" (first-time lookup race) get the correct country
+            # now that the cache has populated. Cheap: in-memory dict hit.
+            ip = (r.get('source_ip') or '').strip()
+            cur = (r.get('source_geo_country_name') or '').strip()
+            if ip and (not cur or cur == 'Unknown'):
+                geo = geoip.lookup(ip)
+                if geo and geo.get('country') and geo['country'] != 'Unknown':
+                    r['source_geo_country_name'] = geo['country']
+                    r['source_geo_country_iso_code'] = geo.get('country_code', '')
             rows.append(r)
         self._json(200, {'events': rows, 'total': len(rows), 'query': q, 'range': range_s})
 
@@ -852,26 +873,37 @@ class SOCHandler(BaseHTTPRequestHandler):
 
         import csv as _csv, io as _io
 
+        def _country_for(row):
+            """Prefer the current GeoIP cache over a stale 'Unknown' in Graylog."""
+            cn = (row.get('source_geo_country_name') or '').strip()
+            ip = (row.get('source_ip') or '').strip()
+            if (not cn or cn == 'Unknown') and ip:
+                geo = geoip.lookup(ip)
+                if geo and geo.get('country') and geo['country'] != 'Unknown':
+                    return geo['country']
+            return cn or 'Unknown'
+
         # Events-by-country — per-event count (attacker traffic included)
         events_csv = self._graylog_search_csv(
-            '*', range_s, ['source_geo_country_name'], limit=10000,
+            '*', range_s, ['source_ip', 'source_geo_country_name'], limit=10000,
         )
         events_by_country = {}
         for r in _csv.DictReader(_io.StringIO(events_csv)):
-            cn = (r.get('source_geo_country_name') or '').strip() or 'Unknown'
+            cn = _country_for(r)
             events_by_country[cn] = events_by_country.get(cn, 0) + 1
 
         # Players-by-country — DISTINCT successful logins (one entry per user).
         # Last-write-wins on country if a player logged from multiple IPs.
+        # SOC operators are excluded — they're not players.
         login_csv = self._graylog_search_csv(
-            'event_action:user_login AND event_outcome:success',
-            range_s, ['user_name', 'source_geo_country_name'], limit=10000,
+            f'event_action:user_login AND event_outcome:success AND NOT user_name:{ADMIN_USERNAME}',
+            range_s, ['user_name', 'source_ip', 'source_geo_country_name'], limit=10000,
         )
         user_country = {}
         for r in _csv.DictReader(_io.StringIO(login_csv)):
             u = (r.get('user_name') or '').strip()
-            cn = (r.get('source_geo_country_name') or '').strip()
-            if u and u != 'anonymous' and cn:
+            cn = _country_for(r)
+            if u and u != 'anonymous' and cn and cn != 'Unknown':
                 user_country[u] = cn
         players_by_country = {}
         for cn in user_country.values():
@@ -1055,6 +1087,8 @@ def main():
     parser.add_argument('--graylog', default='http://localhost:9000')
     parser.add_argument('--graylog-user', default='socadmin')
     parser.add_argument('--graylog-pass', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--graylog-external',
+                        help='Public-facing Graylog URL for pivot links (defaults to --graylog)')
     parser.add_argument('--log-server', default='http://localhost:8080')
     parser.add_argument('--shared-secret', default=os.environ.get('SOC_SHARED_SECRET'),
                         help='Required header value for Graylog → SOC ingestion; disabled if empty')
@@ -1062,6 +1096,7 @@ def main():
 
     CONFIG['port'] = args.port
     CONFIG['graylog_url'] = args.graylog
+    CONFIG['graylog_external_url'] = args.graylog_external or args.graylog
     CONFIG['graylog_auth'] = (args.graylog_user, args.graylog_pass)
     CONFIG['shared_secret'] = args.shared_secret
     CONFIG['log_server'] = args.log_server

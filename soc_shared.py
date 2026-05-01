@@ -50,12 +50,22 @@ def load_blocklist():
 
 
 def is_blocked(ip):
-    return ip in load_blocklist()
-
-
-def block_ip(ip, reason='', actor='admin', alert_id=None, kernel=False):
+    """True if the IP is in the blocklist AND not past its expiry."""
     data = load_blocklist()
-    data[ip] = {
+    rec = data.get(ip)
+    if not rec:
+        return False
+    # Auto-expire short-lived blocks (e.g. force-logout TTL).
+    exp = rec.get('expires_at_epoch')
+    if exp and exp < datetime.now(timezone.utc).timestamp():
+        unblock_ip(ip)
+        return False
+    return True
+
+
+def block_ip(ip, reason='', actor='admin', alert_id=None, kernel=False, ttl_seconds=None):
+    data = load_blocklist()
+    rec = {
         'blocked_at': _now(),
         'blocked_by': actor,
         'reason': reason,
@@ -63,6 +73,9 @@ def block_ip(ip, reason='', actor='admin', alert_id=None, kernel=False):
         'hit_count': data.get(ip, {}).get('hit_count', 0),
         'kernel': kernel,
     }
+    if ttl_seconds:
+        rec['expires_at_epoch'] = datetime.now(timezone.utc).timestamp() + int(ttl_seconds)
+    data[ip] = rec
     _save(BLOCKLIST_FILE, data)
     return data[ip]
 

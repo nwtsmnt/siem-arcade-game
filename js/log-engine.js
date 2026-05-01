@@ -4,7 +4,8 @@ import { getRank } from './engine.js';
 
 const MAX_LOGS = 2000;
 const LOG_API_URL = '/api/logs';
-const SEND_BATCH_INTERVAL = 1000; // flush to server every 1 second
+const SEND_BATCH_INTERVAL = 300; // flush to server every 300ms — fast enough
+                                 // that a SOC block is detected in < 1s.
 
 let logs = [];
 let sendQueue = [];
@@ -240,7 +241,13 @@ export function createLog(player, action, data = {}) {
   const severity = typeof mapping.severity === 'function' ? mapping.severity(data) : mapping.severity;
   const level = typeof mapping.level === 'function' ? mapping.level(data) : mapping.level;
   const message = typeof mapping.message === 'function' ? mapping.message(player, data) : mapping.message;
-  const outcome = data.outcome || (severity >= 3 ? 'failure' : 'success');
+  // Gameplay events are never "failures" from a SIEM perspective — a
+  // player losing a life is normal game state, not a security incident.
+  // Only authentication events can legitimately have outcome=failure.
+  const isGameplay = mapping.category &&
+      (Array.isArray(mapping.category) ? mapping.category : [mapping.category])
+      .some(c => ['gameplay', 'process', 'game', 'session'].includes(c));
+  const outcome = data.outcome || (severity >= 3 && !isGameplay ? 'failure' : 'success');
 
   const record = {
     '@timestamp': new Date().toISOString(),
@@ -328,14 +335,42 @@ export function exportLogs() {
 }
 
 function flushLogs() {
-  if (sendQueue.length === 0) return;
-
+  // Always send, even when the queue is empty — an empty POST still lets
+  // the server tell us "you're blocked", which is what we want for an
+  // idle player who might otherwise miss a force-logout for minutes.
   const batch = sendQueue.splice(0);
 
   fetch(LOG_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(batch),
+  }).then(r => {
+    // SOC blocked us (force-logout or IP block) — freeze the game and
+    // bounce back to login with a visible notice.
+    if (r.status === 403 || r.status === 401) {
+      if (window.__siemKicked) return;
+      window.__siemKicked = true;
+      try { sessionStorage.clear(); localStorage.removeItem('siem_user'); } catch {}
+      // Stop sending more pings so we don't spam the log.
+      if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
+      // Try to pause the running game engine immediately.
+      try { window.dispatchEvent(new CustomEvent('siem:kicked')); } catch {}
+      // Full-screen overlay — replaces alert() so the game canvas is visibly stopped.
+      const ov = document.createElement('div');
+      ov.style.cssText =
+        'position:fixed;inset:0;z-index:999999;display:flex;align-items:center;' +
+        'justify-content:center;background:rgba(0,0,0,0.92);backdrop-filter:blur(6px);' +
+        "font-family:'VT323',monospace;color:#ff4444;text-align:center;padding:20px;";
+      ov.innerHTML =
+        '<div style="border:2px solid #ff4444;padding:36px 48px;max-width:640px;' +
+        'box-shadow:0 0 32px #ff4444;">' +
+        '<div style="font-size:48px;letter-spacing:4px;margin-bottom:12px;">&gt; SESSION TERMINATED</div>' +
+        '<div style="font-size:20px;color:#ffaa66;margin-bottom:20px;">// ACCESS REVOKED BY SECURITY TEAM //</div>' +
+        '<div style="font-size:16px;color:#888;">Returning to login in 3 seconds...</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      setTimeout(() => { window.location.href = '/'; }, 3000);
+    }
   }).catch(() => {
     // Server not running — silently ignore, logs still accumulate in-memory
   });

@@ -315,6 +315,199 @@ def security_overview(g):
     )
 
 
+def soc_executive(g):
+    """Dashboard #1 — SOC Executive Overview (polish).
+
+    One screen for the CISO: what's happening right now, what's the trend,
+    who are the top offenders, what's the blast radius.
+    """
+    w1 = agg_widget('Total events (24h)', '*', count_series(), viz='numeric')
+    w2 = agg_widget('Auth failures (24h)',
+                    'event_outcome:failure AND event_category:authentication',
+                    count_series(), viz='numeric')
+    w3 = agg_widget('Distinct source IPs (24h)', '*',
+                    [{'config': {'name': 'ips'}, 'function': 'card(source_ip)'}],
+                    viz='numeric')
+    w4 = agg_widget('Distinct players (24h)',
+                    'event_category:gameplay',
+                    [{'config': {'name': 'players'}, 'function': 'card(user_name)'}],
+                    viz='numeric')
+    w5 = agg_widget('Event rate over time (24h, 30m)', '*',
+                    count_series(), row_pivots=time_pivot('30m'),
+                    viz='line')
+    w6 = agg_widget('Events by outcome (24h)', '*',
+                    count_series(), row_pivots=values_pivot('event_outcome', 5),
+                    viz='pie', row_limit=5)
+    w7 = agg_widget('Top 10 source IPs (24h)', '*',
+                    count_series(), row_pivots=values_pivot('source_ip', 10),
+                    viz='table', row_limit=10)
+    w8 = message_widget('Recent auth failures',
+                        'event_outcome:failure AND event_category:authentication',
+                        fields=['timestamp', 'source_ip', 'user_name', 'message'], limit=20)
+
+    widgets = [w1, w2, w3, w4, w5, w6, w7, w8]
+    titles = {w1['id']: 'Total events', w2['id']: 'Auth failures',
+              w3['id']: 'Distinct IPs', w4['id']: 'Distinct players',
+              w5['id']: 'Event rate over time', w6['id']: 'Outcome mix',
+              w7['id']: 'Top source IPs', w8['id']: 'Recent auth failures'}
+    return create_dashboard(
+        g, title='SOC Executive Overview',
+        summary='One-screen CISO view: volume, trends, top offenders — last 24h',
+        description='High-level posture dashboard across authentication, gameplay, and infrastructure traffic. Drill into the other dashboards for detail.',
+        widget_defs=widgets, titles=titles,
+    )
+
+
+def auth_security(g):
+    """Dashboard #2 — Authentication Security.
+
+    Everything about who logged in, who tried to, who got blocked, and from
+    where. The single most attack-surface-facing dashboard.
+    """
+    w1 = agg_widget('Successful logins (24h)',
+                    'event_action:user_login AND event_outcome:success',
+                    count_series(), viz='numeric')
+    w2 = agg_widget('Failed logins (24h)',
+                    'event_action:auth_failure',
+                    count_series(), viz='numeric')
+    w3 = agg_widget('Success vs failure over time (24h, 30m)',
+                    'event_category:authentication',
+                    count_series(), row_pivots=time_pivot('30m'),
+                    viz='line')
+    w4 = agg_widget('Top 10 targeted usernames (24h)',
+                    'event_action:auth_failure',
+                    count_series(), row_pivots=values_pivot('user_name', 10),
+                    viz='bar', row_limit=10)
+    w5 = agg_widget('Top 10 attacking IPs (24h)',
+                    'event_action:auth_failure',
+                    count_series(), row_pivots=values_pivot('source_ip', 10),
+                    viz='bar', row_limit=10)
+    w6 = agg_widget('Failed logins by country (24h)',
+                    'event_action:auth_failure',
+                    count_series(),
+                    row_pivots=values_pivot('source_geo_country_name', 10),
+                    viz='pie', row_limit=10)
+    w7 = message_widget('Recent auth failures',
+                        'event_action:auth_failure',
+                        fields=['timestamp', 'source_ip', 'source_geo_country_name',
+                                'user_name', 'message'],
+                        limit=30)
+
+    widgets = [w1, w2, w3, w4, w5, w6, w7]
+    titles = {w1['id']: 'Successful logins', w2['id']: 'Failed logins',
+              w3['id']: 'Success vs failure timeline',
+              w4['id']: 'Top targeted usernames', w5['id']: 'Top attacking IPs',
+              w6['id']: 'Failures by country', w7['id']: 'Recent failures'}
+    return create_dashboard(
+        g, title='Authentication Security',
+        summary='Login success / failure patterns, targeted accounts, attacking IPs — last 24h',
+        description='Where the SIEM earns its keep. Brute-force, credential stuffing, targeted-account attack, account takeover all show up here first.',
+        widget_defs=widgets, titles=titles,
+    )
+
+
+def threat_detection(g):
+    """Dashboard #3 — Threat Detection & Coverage.
+
+    Are our correlation rules actually firing? At what rate? What's the
+    dominant attack shape right now? Coverage map across MITRE classes.
+    """
+    # Message volume that each rule's query matches — proxy for "fired" alerts
+    # rate since true alert events live in gl-events_* (outside message index).
+    w1 = agg_widget('Brute-force candidates (5 min)',
+                    'event_action:auth_failure AND NOT labels_load_test:1',
+                    count_series(), viz='numeric', timerange_s=300)
+    w2 = agg_widget('DoS candidates (5 min)',
+                    'event_category:authentication AND NOT labels_load_test:1',
+                    count_series(), viz='numeric', timerange_s=300)
+    w3 = agg_widget('Targeted-account candidates (5 min)',
+                    'event_action:auth_failure AND NOT labels_load_test:1',
+                    [{'config': {'name': 'users'}, 'function': 'card(user_name)'}],
+                    viz='numeric', timerange_s=300)
+    w4 = agg_widget('Attack-type mix (24h)',
+                    '_exists_:labels_attack_type AND NOT labels_load_test:1',
+                    count_series(),
+                    row_pivots=values_pivot('labels_attack_type', 10),
+                    viz='pie', row_limit=10)
+    w5 = agg_widget('Attack volume by type over time (24h, 30m)',
+                    '_exists_:labels_attack_type AND NOT labels_load_test:1',
+                    count_series(),
+                    row_pivots=time_pivot('30m') + values_pivot('labels_attack_type', 5),
+                    viz='line')
+    w6 = agg_widget('Top 10 attacker IPs (24h)',
+                    '_exists_:labels_attack_type AND NOT labels_load_test:1',
+                    count_series(), row_pivots=values_pivot('source_ip', 10),
+                    viz='bar', row_limit=10)
+    w7 = message_widget('Recent attack-type events',
+                        '_exists_:labels_attack_type AND NOT labels_load_test:1',
+                        fields=['timestamp', 'labels_attack_type', 'source_ip',
+                                'user_name', 'message'],
+                        limit=30)
+
+    widgets = [w1, w2, w3, w4, w5, w6, w7]
+    titles = {w1['id']: 'Brute-force rate (5m)', w2['id']: 'DoS rate (5m)',
+              w3['id']: 'Distinct targets (5m)',
+              w4['id']: 'Attack-type mix', w5['id']: 'Attack volume over time',
+              w6['id']: 'Top attacker IPs', w7['id']: 'Recent attack events'}
+    return create_dashboard(
+        g, title='Threat Detection & Coverage',
+        summary='Live attack rate, rule-candidate volumes, MITRE-adjacent coverage — last 24h + 5 min gauges',
+        description='Operational view of the detection layer. The 5-minute gauges match the correlation-rule windows; values near the rule thresholds mean a fire is imminent.',
+        widget_defs=widgets, titles=titles,
+    )
+
+
+def compliance_audit(g):
+    """Dashboard #5 — Compliance & Audit.
+
+    Everything an auditor or regulator would ask for: operator actions over
+    time, data-access trail, retention evidence, incident-response cadence.
+    """
+    w1 = agg_widget('SOC actions (24h)',
+                    'event_provider:soc-console',
+                    count_series(), viz='numeric')
+    w2 = agg_widget('IPs blocked (24h)',
+                    'event_action:soc_block_ip',
+                    count_series(), viz='numeric')
+    w3 = agg_widget('Users disabled (24h)',
+                    'event_action:soc_disable_user',
+                    count_series(), viz='numeric')
+    w4 = agg_widget('Force-logouts (24h)',
+                    'event_action:soc_force_logout_ip',
+                    count_series(), viz='numeric')
+    w5 = agg_widget('SOC action mix (24h)',
+                    'event_provider:soc-console',
+                    count_series(),
+                    row_pivots=values_pivot('event_action', 15),
+                    viz='pie', row_limit=15)
+    w6 = agg_widget('SOC actions over time (24h, 30m)',
+                    'event_provider:soc-console',
+                    count_series(), row_pivots=time_pivot('30m'),
+                    viz='line')
+    w7 = message_widget('SOC action trail (GDPR Art. 30 — record of processing)',
+                        'event_provider:soc-console',
+                        fields=['timestamp', 'user_name', 'event_action',
+                                'source_ip', 'message'],
+                        limit=50)
+    w8 = message_widget('Data-access trail — authentication events',
+                        'event_category:authentication',
+                        fields=['timestamp', 'user_name', 'event_action',
+                                'event_outcome', 'source_ip'],
+                        limit=30)
+
+    widgets = [w1, w2, w3, w4, w5, w6, w7, w8]
+    titles = {w1['id']: 'SOC actions', w2['id']: 'IPs blocked',
+              w3['id']: 'Users disabled', w4['id']: 'Force-logouts',
+              w5['id']: 'SOC action mix', w6['id']: 'SOC actions timeline',
+              w7['id']: 'SOC action trail', w8['id']: 'Auth access trail'}
+    return create_dashboard(
+        g, title='Compliance & Audit',
+        summary='Operator action trail + access events for GDPR/SOC 2 audit evidence — last 24h',
+        description='What a regulator would ask for. Every SOC operator click is a log event; the trail table below is the GDPR Art. 30 record of processing activities.',
+        widget_defs=widgets, titles=titles,
+    )
+
+
 def game_health(g):
     w1 = agg_widget('Total events (24h)', '*', count_series('events'), viz='numeric')
     w2 = agg_widget('Unique users (24h)', '*',
@@ -368,8 +561,12 @@ def main():
     print(f'Connected to {args.url}\n')
 
     print('→ Dashboards')
-    security_overview(g)
+    soc_executive(g)
+    auth_security(g)
+    threat_detection(g)
+    compliance_audit(g)
     game_health(g)
+    security_overview(g)   # legacy, keep so old links still work
     print('\nDone.')
 
 

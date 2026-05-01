@@ -23,6 +23,23 @@ window.addEventListener('DOMContentLoaded', () => {
   const errorEl = document.getElementById('login-error');
   const successEl = document.getElementById('login-success');
 
+  // Credits modal open/close
+  const creditsBtn = document.getElementById('credits-btn');
+  const creditsOverlay = document.getElementById('credits-overlay');
+  const creditsClose = document.getElementById('credits-close');
+  if (creditsBtn && creditsOverlay) {
+    const openCredits = () => creditsOverlay.classList.remove('hidden');
+    const closeCredits = () => creditsOverlay.classList.add('hidden');
+    creditsBtn.addEventListener('click', openCredits);
+    creditsClose.addEventListener('click', closeCredits);
+    creditsOverlay.addEventListener('click', (e) => {
+      if (e.target === creditsOverlay) closeCredits();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !creditsOverlay.classList.contains('hidden')) closeCredits();
+    });
+  }
+
   function showError(msg) {
     errorEl.textContent = msg;
     errorEl.classList.remove('hidden');
