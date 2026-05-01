@@ -18,7 +18,7 @@ Response actions (all admin-gated):
 
 Usage:
   python3 soc-server.py [--port 8090] [--graylog http://localhost:9000] \\
-                        [--graylog-user socadmin --graylog-pass <REDACTED-PASSWORD>] \\
+                        [--graylog-user <user> --graylog-pass <password>] \\
                         [--shared-secret <graylog-http-notification-secret>]
 """
 import argparse
@@ -77,9 +77,9 @@ def ensure_default_server():
             'registered_at': datetime.now(timezone.utc).isoformat(timespec='seconds') + 'Z',
         }])
 
-ADMIN_USERNAME = 'socadmin'
-# sha256('<REDACTED-PASSWORD>')
-ADMIN_PASSWORD_HASH = '<REDACTED-SHA256>'
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'socadmin')
+# Set via env: export ADMIN_PASSWORD_SHA256=$(echo -n 'your-password' | sha256sum | awk '{print $1}')
+ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_SHA256', '')
 SESSION_COOKIE = 'soc_session'
 
 # In-memory session tokens (token -> {username, created})
@@ -105,7 +105,8 @@ CONFIG = {
     'port': 8090,
     'graylog_url': 'http://localhost:9000',
     'graylog_external_url': None,   # public-facing URL used for pivot links only
-    'graylog_auth': ('socadmin', '<REDACTED-PASSWORD>'),
+    'graylog_auth': (os.environ.get('GRAYLOG_USER', 'socadmin'),
+                     os.environ.get('GRAYLOG_PASSWORD', '')),
     'shared_secret': None,
     'log_server': 'http://localhost:8080',
 }
@@ -1085,8 +1086,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8090)
     parser.add_argument('--graylog', default='http://localhost:9000')
-    parser.add_argument('--graylog-user', default='socadmin')
-    parser.add_argument('--graylog-pass', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--graylog-user', default=os.environ.get('GRAYLOG_USER', 'socadmin'))
+    parser.add_argument('--graylog-pass', default=os.environ.get('GRAYLOG_PASSWORD', ''))
     parser.add_argument('--graylog-external',
                         help='Public-facing Graylog URL for pivot links (defaults to --graylog)')
     parser.add_argument('--log-server', default='http://localhost:8080')
@@ -1108,7 +1109,7 @@ def main():
     print(f'  Graylog:       {args.graylog}')
     print(f'  Log-server:    {args.log_server}')
     print(f'  Shared secret: {"<set>" if args.shared_secret else "<none — ingest unauth>"}')
-    print(f'  Login:         socadmin / <REDACTED-PASSWORD>')
+    print(f'  Login:         set via $ADMIN_USERNAME / $ADMIN_PASSWORD_SHA256')
     print('========================================\n')
 
     ensure_default_server()

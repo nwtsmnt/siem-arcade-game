@@ -35,9 +35,9 @@ import soc_shared as S
 import geoip
 
 USERS_FILE = 'data/users.json'
-ADMIN_USERNAME = 'socadmin'
-# sha256('<REDACTED-PASSWORD>')
-ADMIN_PASSWORD_HASH = '<REDACTED-SHA256>'
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'socadmin')
+# Set via env: export ADMIN_PASSWORD_SHA256=$(echo -n 'your-password' | sha256sum | awk '{print $1}')
+ADMIN_PASSWORD_HASH = os.environ.get('ADMIN_PASSWORD_SHA256', '')
 
 # Attack simulation state
 active_simulations = {}

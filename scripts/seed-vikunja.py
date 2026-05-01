@@ -2,11 +2,12 @@
 """Seed Vikunja with the 5-person SIEM-arcade team, one project, and ~25 tasks.
 Run on the VPS so it can hit 127.0.0.1:3456 directly (no DNS needed).
 Idempotent: skips users/projects that already exist."""
-import json, sys, urllib.request, urllib.error
+import json, os, sys, urllib.request, urllib.error
 from datetime import datetime, timedelta, timezone
 
-BASE = "http://127.0.0.1:3456/api/v1"
-PASSWORD = "<REDACTED-PASSWORD>"
+BASE = os.environ.get("VIKUNJA_URL", "http://127.0.0.1:3456/api/v1")
+PASSWORD = os.environ.get("VIKUNJA_SEED_PASSWORD") or sys.exit(
+    "Set VIKUNJA_SEED_PASSWORD before running this script.")
 
 TEAM = [
     ("roman",  "Roman Tcholokava",   "roman@siem-game.co.uk",   "PM / Detection"),
@@ -196,7 +197,7 @@ def main():
         flag = "✓" if bidx == 4 else "·"
         print(f"   {flag} [{BUCKET_NAMES[bidx]:7}] {owner:7} {title}")
 
-    print("\n✓ done. Open https://pm.siem-game.co.uk and log in as roman / <REDACTED-PASSWORD>")
+    print("\n✓ done. Open your Vikunja instance and log in as roman with the password you set in $VIKUNJA_SEED_PASSWORD.")
 
 
 if __name__ == "__main__":

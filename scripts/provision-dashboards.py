@@ -10,11 +10,12 @@ Idempotent: deletes and recreates any view with a matching title.
 
 Usage:
   python3 scripts/provision-dashboards.py [--url http://localhost:9000] \\
-                                           [--user socadmin] [--password <REDACTED-PASSWORD>]
+                                           [--user <user>] [--password <password>]
 """
 import argparse
 import base64
 import json
+import os
 import sys
 import uuid
 import urllib.error
@@ -549,8 +550,8 @@ def game_health(g):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', default='http://localhost:9000')
-    parser.add_argument('--user', default='socadmin')
-    parser.add_argument('--password', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--user', default=os.environ.get('GRAYLOG_USER', 'socadmin'))
+    parser.add_argument('--password', default=os.environ.get('GRAYLOG_PASSWORD', ''))
     args = parser.parse_args()
 
     g = G(args.url, args.user, args.password)

@@ -12,7 +12,7 @@ What's in the report:
 
 Usage:
   python3 scripts/daily-report.py [--url http://localhost:9000] \\
-                                   [--user socadmin] [--password <REDACTED-PASSWORD>] \\
+                                   [--user <user>] [--password <password>] \\
                                    [--out reports/] [--hours 24]
 
 Cron example (midnight daily):
@@ -328,8 +328,8 @@ def render_report(rows_all, rows_auth, alerts, hours, graylog_url):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', default='http://localhost:9000')
-    parser.add_argument('--user', default='socadmin')
-    parser.add_argument('--password', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--user', default=os.environ.get('GRAYLOG_USER', 'socadmin'))
+    parser.add_argument('--password', default=os.environ.get('GRAYLOG_PASSWORD', ''))
     parser.add_argument('--out', default='reports', help='Output directory (default: reports/)')
     parser.add_argument('--hours', type=int, default=24, help='Reporting window in hours (default: 24)')
     args = parser.parse_args()

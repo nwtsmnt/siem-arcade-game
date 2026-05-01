@@ -9,11 +9,12 @@ Idempotent: re-running skips items that already exist.
 
 Usage:
   python3 scripts/provision-graylog.py [--url http://localhost:9000] \\
-                                        [--user socadmin] [--password <REDACTED-PASSWORD>]
+                                        [--user <user>] [--password <password>]
 """
 import argparse
 import base64
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -383,8 +384,8 @@ def provision_event_definitions(g):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', default='http://localhost:9000')
-    parser.add_argument('--user', default='socadmin')
-    parser.add_argument('--password', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--user', default=os.environ.get('GRAYLOG_USER', 'socadmin'))
+    parser.add_argument('--password', default=os.environ.get('GRAYLOG_PASSWORD', ''))
     parser.add_argument('--soc-url', default='http://127.0.0.1:8090/api/soc/ingest-event',
                         help='SOC Console endpoint for Graylog HTTP notifications')
     parser.add_argument('--soc-secret', default=None,

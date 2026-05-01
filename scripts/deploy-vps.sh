@@ -4,8 +4,10 @@
 # nginx/certbot/ufw steps. Idempotent.
 set -euo pipefail
 
-DOMAIN="${DOMAIN:-YOURDOMAIN.tld}"      # <— override before first run
-EMAIL="${EMAIL:-you@email.com}"         # <— Let's Encrypt contact
+DOMAIN="${DOMAIN:?export DOMAIN=yourdomain.tld first}"
+EMAIL="${EMAIL:?export EMAIL=you@example.com first (Let's Encrypt contact)}"
+GRAYLOG_USER="${GRAYLOG_USER:-socadmin}"
+: "${GRAYLOG_PASSWORD:?export GRAYLOG_PASSWORD before running this script}"
 GRAYLOG_SUB="graylog"
 SOC_SUB="soc"
 GAME_SUB="game"
@@ -29,7 +31,7 @@ echo "── [3/7] docker compose up"
 docker compose -f docker-compose.ha.yml up -d
 echo "   waiting for Graylog leader..."
 for i in {1..60}; do
-  curl -sf -u "socadmin:<REDACTED-PASSWORD>" -H 'X-Requested-By: cli' \
+  curl -sf -u "$GRAYLOG_USER:$GRAYLOG_PASSWORD" -H 'X-Requested-By: cli' \
       http://127.0.0.1:9001/api/system/lbstatus 2>/dev/null | grep -q alive && break
   sleep 5
 done
@@ -92,6 +94,8 @@ sudo certbot --nginx --non-interactive --agree-tos -m "$EMAIL" \
 
 echo
 echo "✓ Deployed."
-echo "   Graylog: https://$GRAYLOG_SUB.$DOMAIN  (socadmin / <REDACTED-PASSWORD>)"
+echo "   Graylog: https://$GRAYLOG_SUB.$DOMAIN"
 echo "   SOC:     https://$SOC_SUB.$DOMAIN"
 echo "   Game:    https://$GAME_SUB.$DOMAIN"
+echo
+echo "   Login uses the credentials you set in .env."

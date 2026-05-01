@@ -2,7 +2,9 @@
 # IP-only deploy (no domain, no TLS). Runs as root from the repo root.
 set -euo pipefail
 
-PUBLIC_IP="${PUBLIC_IP:-<REDACTED-VPS-IP>}"
+PUBLIC_IP="${PUBLIC_IP:?export PUBLIC_IP=your.vps.ip first}"
+GRAYLOG_USER="${GRAYLOG_USER:-socadmin}"
+: "${GRAYLOG_PASSWORD:?export GRAYLOG_PASSWORD before running this script}"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
@@ -23,7 +25,7 @@ echo "── [3/6] bind nginx LB to 0.0.0.0 (already is) and start stack"
 docker compose -f docker-compose.ha.yml up -d
 echo "   waiting for Graylog leader..."
 for i in {1..60}; do
-  curl -sf -u "socadmin:<REDACTED-PASSWORD>" -H 'X-Requested-By: cli' \
+  curl -sf -u "$GRAYLOG_USER:$GRAYLOG_PASSWORD" -H 'X-Requested-By: cli' \
       http://127.0.0.1:9001/api/system/lbstatus 2>/dev/null | grep -q alive && break
   sleep 5
 done
@@ -78,6 +80,9 @@ ufw --force enable
 
 echo
 echo "✓ Deployed on http://$PUBLIC_IP"
-echo "   Graylog: http://$PUBLIC_IP:9000   (socadmin / <REDACTED-PASSWORD>)"
-echo "   SOC:     http://$PUBLIC_IP:8090   (socadmin / <REDACTED-PASSWORD>)"
-echo "   Game:    http://$PUBLIC_IP:8080   (socadmin / <REDACTED-PASSWORD>)"
+echo "   Graylog: http://$PUBLIC_IP:9000"
+echo "   SOC:     http://$PUBLIC_IP:8090"
+echo "   Game:    http://$PUBLIC_IP:8080"
+echo
+echo "   Login uses the credentials you set in .env (GRAYLOG_ROOT_USERNAME +"
+echo "   GRAYLOG_ROOT_PASSWORD_SHA2)."

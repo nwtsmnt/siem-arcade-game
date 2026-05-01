@@ -405,8 +405,8 @@ def main():
     parser.add_argument('--from', dest='date_from', required=True, help='YYYY-MM-DD')
     parser.add_argument('--to',   dest='date_to',   required=True, help='YYYY-MM-DD')
     parser.add_argument('--url',  default='http://localhost:9000')
-    parser.add_argument('--user', default='socadmin')
-    parser.add_argument('--password', default='<REDACTED-PASSWORD>')
+    parser.add_argument('--user', default=os.environ.get('GRAYLOG_USER', 'socadmin'))
+    parser.add_argument('--password', default=os.environ.get('GRAYLOG_PASSWORD', ''))
     parser.add_argument('--out',  default='reports')
     args = parser.parse_args()
 
